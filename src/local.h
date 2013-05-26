@@ -54,7 +54,10 @@ struct remote {
 };
 
 
-static void accept_cb (EV_P_ ev_io *w, int revents);
+#ifndef DARWIN_LAUNCHD
+static
+#endif
+void accept_cb (EV_P_ ev_io *w, int revents);
 static void server_recv_cb (EV_P_ ev_io *w, int revents);
 static void server_send_cb (EV_P_ ev_io *w, int revents);
 static void remote_recv_cb (EV_P_ ev_io *w, int revents);

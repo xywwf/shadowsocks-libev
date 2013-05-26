@@ -18,6 +18,9 @@ debian/patches/
 debian/files
 debian/shadowsocks.substvars
 debian/*.debhelper*
+.DS_Store
+*.swp
+darwin/shadowd
 
 #	Do not edit the following section
 # 	Edit Compile Debug Document Distribute

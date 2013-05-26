@@ -36,6 +36,10 @@
 #define EWOULDBLOCK EAGAIN
 #endif
 
+#ifdef DARWIN_LAUNCHD
+extern ev_timer _local_timer;
+#endif
+
 int setnonblocking(int fd) {
     int flags;
     if (-1 ==(flags = fcntl(fd, F_GETFL, 0)))
@@ -540,13 +544,19 @@ void close_and_free_server(EV_P_ struct server *server) {
     }
 }
 
-static void accept_cb (EV_P_ ev_io *w, int revents) {
+#ifndef DARWIN_LAUNCHD
+static
+#endif
+void accept_cb (EV_P_ ev_io *w, int revents) {
     struct listen_ctx *listener = (struct listen_ctx *)w;
     int serverfd = accept(listener->fd, NULL, NULL);
     if (serverfd == -1) {
         ERROR("accept");
         return;
     }
+#ifdef DARWIN_LAUNCHD
+    ev_timer_again(EV_A_ &_local_timer);
+#endif
     setnonblocking(serverfd);
     int opt = 1;
     setsockopt(serverfd, IPPROTO_TCP, TCP_NODELAY, &opt, sizeof(opt));
@@ -596,6 +606,7 @@ static void accept_cb (EV_P_ ev_io *w, int revents) {
     ev_timer_start(EV_A_ &remote->send_ctx->watcher);
 }
 
+#ifndef DARWIN_LAUNCHD
 int main (int argc, char **argv) {
 
     int i, c;
@@ -721,4 +732,5 @@ int main (int argc, char **argv) {
     ev_run (loop, 0);
     return 0;
 }
+#endif
 
