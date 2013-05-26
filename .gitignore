@@ -21,6 +21,7 @@ debian/*.debhelper*
 .DS_Store
 *.swp
 darwin/shadowd
+!darwin/config.h
 
 #	Do not edit the following section
 # 	Edit Compile Debug Document Distribute
