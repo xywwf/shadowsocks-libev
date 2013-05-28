@@ -136,9 +136,15 @@ void send_pac_exception(FILE *stream)
                 if (first) {
                     fprintf(stream, PAC_EXCEPT_HEAD);
                     first = NO;
+                    fprintf(stream, "'%s'", [str cStringUsingEncoding:NSUTF8StringEncoding]);
                 }
-                fprintf(stream, "%s", [[NSString stringWithFormat:PAC_EXCEPT_ENTRY, str, str] cStringUsingEncoding:NSUTF8StringEncoding]);
+                else {
+                    fprintf(stream, ", '%s'", [str cStringUsingEncoding:NSUTF8StringEncoding]);
+                }
             }
+        if (first == NO) {
+            fprintf(stream, PAC_EXCEPT_TAIL);
+        }
     }
     [pool release];
 }

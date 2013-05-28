@@ -26,8 +26,8 @@
 #define LAUNCHD_NAME_SOCKS "SOCKS"
 #define LAUNCHD_NAME_PAC "PAC"
 #define PAC_FUNC "FindProxyForURL"
-#define PAC_EXCEPT_HEAD "\n    var lhost = host.toLowerCase();\n"
-#define PAC_EXCEPT_ENTRY @"    if (shExpMatch(lhost, '%@')) return 'DIRECT';\n    if (shExpMatch(lhost, '*.%@')) return 'DIRECT';\n"
+#define PAC_EXCEPT_HEAD "\n    var lhost = host.toLowerCase();\n    var exp_list = ["
+#define PAC_EXCEPT_TAIL "];\n    for (i = 0; i < exp_list.length; i++) {\n        var domain_str = '.' + exp_list[i];\n        if (lhost == exp_list[i] || lhost.indexOf(domain_str, lhost.length - domain_str.length) !== -1) {\n            return 'DIRECT';\n        }\n    }\n"
 
 typedef void (*ev_handler)(struct ev_loop *, struct ev_io *, int);
 
