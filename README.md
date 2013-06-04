@@ -11,10 +11,14 @@ It is a port of [shadowsocks](https://github.com/clowwindy/shadowsocks)
 created by [@clowwindy](https://github.com/clowwindy) maintained by 
 [@madeye](https://github.com/madeye).
 
-Current version: 1.3 [![Build Status](https://travis-ci.org/madeye/shadowsocks-libev.png?branch=master)](https://travis-ci.org/madeye/shadowsocks-libev)
+Current version: 1.3.1 [![Build Status](https://travis-ci.org/madeye/shadowsocks-libev.png?branch=master)](https://travis-ci.org/madeye/shadowsocks-libev)
 
 Changelog
 ---------
+
+shadowsocks 1.3.1 -- Tue, 04 Jun 2013 00:56:17 +0000
+
+  * Support more cihpers: camellia, idea, rc2 and seed.
 
 shadowsocks 1.3 -- Thu, 16 May 2013 10:51:15 +0800
 
@@ -62,22 +66,25 @@ Usage
 ```
 usage:
 
-    ss-local -s server_host -p server_port -l local_port -k password
-       [-m encrypt_method] [-f pid_file] [-t timeout] [-c config_file]
-
-    ss-redir -s server_host -p server_port -l local_port -k password
-       [-m encrypt_method] [-f pid_file] [-t timeout] [-c config_file]
-
-    ss-server -s server_host -p server_port -k password
-       [-m encrypt_method] [-f pid_file] [-t timeout] [-c config_file]
+ss-[local|redir|server]
+      -s <server_host>        -p <server_port>
+      -l <local_port>         -k <password>
+      [-m <encrypt_method>]   [-f <pid_file>]
+      [-t <timeout>]          [-c <config_file>]
+      [-i <interface>]        [-b <local_address>]
 
 options:
 
-    encrypt_method:     table, rc4, aes-128-cfb, aes-192-cfb, aes-256-cfb,
-                        bf-cfb, cast5-cfb, des-cfb
-          pid_file:     valid path to the pid file
-           timeout:     socket timeout in senconds
-       config_file:     json format config file
+encrypt_method:   table, rc4,
+                  aes-128-cfb, aes-192-cfb, aes-256-cfb,
+                  bf-cfb, camellia-128-cfb, camellia-192-cfb,
+                  camellia-256-cfb, cast5-cfb, des-cfb,
+                  idea-cfb, rc2-cfb and seed-cfb
+      pid_file:   valid path to the pid file
+       timeout:   socket timeout in senconds
+   config_file:   json format config file
+     interface:   specific network interface to bind
+ local_address:   specific address clients listen on
 
 notes:
 
