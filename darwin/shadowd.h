@@ -8,6 +8,8 @@
 #define BUFF_MAX 1024
 #define LOCAL_PORT 1983
 #define PAC_PORT 1993
+#define LOCAL_PORT_STR "1983"
+#define PAC_PORT_STR "1993"
 #define EMPTY_PAC_HEAD "function FindProxyForURL(url, host) {\n"
 
 #ifdef DARWIN_MAC
@@ -41,10 +43,10 @@ void update_config();
 void update_ctx_conf(struct listen_ctx *ctx);
 void update_ctx_array_conf(struct listen_ctx *ctx_array, int array_len);
 struct listen_ctx *listen_from_launchd(EV_P_ int *array_len, const char *socket_name, launch_data_t sockets_dict, ev_handler handler);
-int listen_from_port(EV_P_ struct listen_ctx *ctx, int port, ev_handler handler);
+int listen_from_port(EV_P_ struct listen_ctx *ctx, const char *port, ev_handler handler);
 static void pac_accept_cb (EV_P_ ev_io *w, int revents);
 static void listen_timeout_cb(EV_P_ ev_timer *watcher, int revents);
-int create_and_bind(const char *port);
+int create_and_bind(const char *addr, const char *port);
 int setnonblocking(int fd);
 
 typedef enum {kProxyPac, kProxySocks, kProxyNone} ProxyStatus;

@@ -415,12 +415,10 @@ struct listen_ctx *listen_from_launchd(EV_P_ int *array_len, const char *socket_
     return ctx_array;
 }
 
-int listen_from_port(EV_P_ struct listen_ctx *ctx, int port, ev_handler handler)
+int listen_from_port(EV_P_ struct listen_ctx *ctx, const char *port, ev_handler handler)
 {
     int listenfd;
-    char buf[30];
-    sprintf(buf, "%d", port);
-    listenfd = create_and_bind(buf);
+    listenfd = create_and_bind("127.0.0.1", port);
     if (listenfd < 0) {
         LOGE("bind error");
         return 1;
@@ -519,11 +517,11 @@ int main (int argc, const char *argv[])
             return -1;
     }
     else {
-        if (listen_from_port(EV_A_ &_local_ctx, LOCAL_PORT, accept_cb)) {
+        if (listen_from_port(EV_A_ &_local_ctx, LOCAL_PORT_STR, accept_cb)) {
             LOGE("listen on socks port failed");
             return -1;
         }
-        if (listen_from_port(EV_A_ &_pac_ctx, PAC_PORT, pac_accept_cb)) {
+        if (listen_from_port(EV_A_ &_pac_ctx, PAC_PORT_STR, pac_accept_cb)) {
             LOGE("listen on pac port failed");
             return -1;
         }
