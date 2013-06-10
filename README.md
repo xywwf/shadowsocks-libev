@@ -11,30 +11,34 @@ It is a port of [shadowsocks](https://github.com/clowwindy/shadowsocks)
 created by [@clowwindy](https://github.com/clowwindy) maintained by 
 [@madeye](https://github.com/madeye).
 
-Current version: 1.3.1 [![Build Status](https://travis-ci.org/madeye/shadowsocks-libev.png?branch=master)](https://travis-ci.org/madeye/shadowsocks-libev)
+Current version: 1.3.2 [![Build Status](https://travis-ci.org/madeye/shadowsocks-libev.png?branch=master)](https://travis-ci.org/madeye/shadowsocks-libev)
 
 Changelog
 ---------
 
-shadowsocks 1.3.1 -- Tue, 04 Jun 2013 00:56:17 +0000
+1.3.2 -- Sun, 09 Jun 2013 09:52:31 +0000
+
+  * Fix some ciphers by @linusyang.
+
+1.3.1 -- Tue, 04 Jun 2013 00:56:17 +0000
 
   * Support more cihpers: camellia, idea, rc2 and seed.
 
-shadowsocks 1.3 -- Thu, 16 May 2013 10:51:15 +0800
+1.3 -- Thu, 16 May 2013 10:51:15 +0800
 
   * Able to bind connections to specific interface 
   * Support more ciphers: aes-128-cfb, aes-192-cfb, aes-256-cfb, bf-cfb, cast5-cfb, des-cfb
 
-shadowsocks 1.2 -- Tue, 07 May 2013 14:10:33 +0800
+1.2 -- Tue, 07 May 2013 14:10:33 +0800
 
   * Close timeouted TCP connections 
   * Fix a high load issue
 
-shadowsocks 1.1 -- Wed, 10 Apr 2013 12:11:36 +0800
+1.1 -- Wed, 10 Apr 2013 12:11:36 +0800
 
   * Fix a IPV6 resolve issue
 
-shadowsocks 1.0 -- Sat, 06 Apr 2013 16:59:15 +0800
+1.0 -- Sat, 06 Apr 2013 16:59:15 +0800
 
   * Initial release
 
@@ -42,9 +46,9 @@ Features
 --------
 
 Shadowsocks-libev is writen in pure C and only depends on
-[libev](http://software.schmorp.de/pkg/libev.html).
+[libev](http://software.schmorp.de/pkg/libev.html) and 
+[openssl](http://www.openssl.org/).
 
-When statically linked and packaged for OpenWRT, the total package size is 23KB. 
 In normal usage, the memory consumption is about 600KB and the CPU utilization is 
 no more than 5% on a low-end router (Buffalo WHR-G300N V2 with a 400MHz MIPS CPU, 
 32MB memory and 4MB flash).
@@ -83,8 +87,10 @@ encrypt_method:   table, rc4,
       pid_file:   valid path to the pid file
        timeout:   socket timeout in senconds
    config_file:   json format config file
-     interface:   specific network interface to bind
- local_address:   specific address clients listen on
+     interface:   specific network interface to bind,
+                  only avaliable in local and server modes
+ local_address:   specific local address to bind,
+                  only avaliable in local and redir modes
 
 notes:
 
@@ -95,7 +101,7 @@ notes:
 
 ## Advanced usage
 
-The latest shadowsocks-libev has provided a transparent mode. You can configure your linux based box or router to proxy all tcp traffic transparently.
+The latest shadowsocks-libev has provided a *redir* mode. You can configure your linux based box or router to proxy all tcp traffic transparently.
 
     # Create new chain
     root@Wrt:~# iptables -t nat -N SHADOWSOCKS

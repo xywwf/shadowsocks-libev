@@ -2,7 +2,7 @@ dnl                                               -*- Autoconf -*-
 dnl Process this file with autoconf to produce a configure script.
 
 AC_PREREQ([2.67])
-AC_INIT([shadowsocks], [1.3.1], [max.c.lv@gmail.com])
+AC_INIT([shadowsocks], [1.3.2], [max.c.lv@gmail.com])
 AC_CONFIG_SRCDIR([src/encrypt.c])
 AC_CONFIG_HEADERS([config.h])
 
@@ -21,6 +21,10 @@ m4_include([libev/libev.m4])
 
 dnl Checks for openssl
 ss_OPENSSL
+
+dnl Checks for inet_aton and inet_ntoa
+ss_FUNC_INET_ATON
+ss_FUNC_INET_NTOA
 
 dnl Checks for host.
 AC_MSG_CHECKING(for what kind of host)
