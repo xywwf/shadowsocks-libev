@@ -85,7 +85,7 @@ void usage()
     printf("  maintained by Max Lv <max.c.lv@gmail.com>\n\n");
     printf("  usage:\n\n");
     printf("    ss-[local|redir|server]\n");
-    printf("          -s <server_host>           host name or ip address of your remote server\n");
+    printf("          -s <server_host>           host name or ip address of remote server\n");
     printf("          -p <server_port>           port number of your remote server\n");
     printf("          -l <local_port>            port number of your local server\n");
     printf("          -k <password>              password of your remote server\n");
@@ -103,6 +103,12 @@ void usage()
     printf("                                     only available in local and server modes\n");
     printf("          [-b <local_address>]       specific local address to bind,\n");
     printf("                                     only available in local and redir modes\n");
+    printf("\n");
+    printf("          [-x <pac_port>]            port number of local pac file server\n");
+    printf("          [-y <pac_path>]            pac auto proxy file path\n");
+    printf("          [-e <except_list>]         white list for proxy\n");
+    printf("          [-d <plist_path>]          launchd mode with plist config, darwin only\n");
+    printf("\n");
     printf("          [-u]                       udprelay mode to supprot udp traffic\n");
     printf("                                     only available in local and server modes\n");
     printf("          [-v]                       verbose mode, debug output in console\n");

@@ -133,6 +133,24 @@ jconf_t *read_jconf(const char* file)
                     conf.remote_num = 1;
                 }
             }
+            else if (strcmp(name, "except_list") == 0)
+            {
+                if (value->type == json_array)
+                {
+                    for (j = 0; j < value->u.array.length; j++)
+                    {
+                        if (j >= MAX_EXCEPT_NUM) break;
+                        json_value *v = value->u.array.values[j];
+                        conf.except_list[j] = to_string(v);
+                        conf.except_num = j + 1;
+                    }
+                }
+                else if (value->type == json_string)
+                {
+                    conf.except_list[0] = to_string(value);
+                    conf.except_num = 1;
+                }
+            }
             else if (strcmp(name, "server_port") == 0)
             {
                 conf.remote_port = to_string(value);
@@ -156,6 +174,14 @@ jconf_t *read_jconf(const char* file)
             else if (strcmp(name, "timeout") == 0)
             {
                 conf.timeout = to_string(value);
+            }
+            else if (strcmp(name, "pac_port") == 0)
+            {
+                conf.pac_port = to_string(value);
+            }
+            else if (strcmp(name, "pac_path") == 0)
+            {
+                conf.pac_path = to_string(value);
             }
         }
     }

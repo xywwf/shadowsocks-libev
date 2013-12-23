@@ -5,12 +5,15 @@
 #define MAX_CONF_SIZE 16 * 1024
 #define DNS_THREAD_NUM 4
 #define MAX_UDP_CONN_NUM 4096
+#define MAX_EXCEPT_NUM 1024
 
 typedef struct
 {
     char *host;
     char *port;
 } remote_addr_t;
+
+typedef char *except_addr_t;
 
 typedef struct
 {
@@ -22,6 +25,10 @@ typedef struct
     char *password;
     char *method;
     char *timeout;
+    char *pac_port;
+    char *pac_path;
+    int except_num;
+    except_addr_t except_list[MAX_EXCEPT_NUM];
 } jconf_t;
 
 jconf_t *read_jconf(const char* file);

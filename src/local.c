@@ -49,6 +49,9 @@
 int verbose = 0;
 int udprelay = 0;
 
+int launchd = 0;
+ev_timer launchd_timer;
+
 #ifndef __MINGW32__
 static int setnonblocking(int fd)
 {
@@ -793,6 +796,189 @@ static void accept_cb (EV_P_ ev_io *w, int revents)
     ev_timer_start(EV_A_ &remote->send_ctx->watcher);
 }
 
+static void pac_recv_cb (EV_P_ ev_io *w, int revents)
+{
+    char use_pac;
+    char exception_sent;
+    char found_pac_func;
+    int len;
+    int sent_num;
+    int except_str_len;
+    int i;
+
+    FILE *stream;
+    FILE *pacfile;
+    char *buf;
+    char *now_buf;
+    char *pac_func_name;
+    char *pac_except_start;
+    char *except_str;
+    char *p;
+    struct pac_server_ctx *pac;
+
+    // Set pac context
+    pac = (struct pac_server_ctx *) w;
+    if (pac == NULL) {
+        LOGE("pac context is null");
+        return;
+    } else if (pac->buf == NULL) {
+        LOGE("buffer of pac context is null");
+        return;
+    }
+
+    // Set receive buffer
+    buf = pac->buf;
+    buf[0] = 0;
+
+    // Receive and ignore HTTP request
+    len = recv(pac->fd, buf, BUF_SIZE - 1, 0);
+    if (len == 0) {
+        close_and_free_pac(EV_A_ pac);
+        return;
+    } else if (len < 0) {
+        if (errno != EAGAIN && errno != EWOULDBLOCK) {
+            ERROR("pac recv");
+            close_and_free_pac(EV_A_ pac);
+        }
+        return;
+    }
+
+    // Open received data as stream
+    stream = fdopen(pac->fd, "w");
+    if (stream == NULL) {
+        ERROR("fdopen");
+        return;
+    }
+
+    // Send HTTP response header
+    fprintf(stream, PAC_RESPONSE);
+
+    // Generate exception list
+    except_str = NULL;
+    except_str_len = 0;
+    if (pac->except_num > 0) {
+        except_str_len = PAC_EXCEPT_HEAD_LEN + pac->except_num * PAC_EXCEPT_ENTRY_LEN;
+        for (i = 0; i < pac->except_num; i++) {
+            except_str_len += 2 * strlen(pac->except_list[i]);
+        }
+        except_str = (char *) malloc(except_str_len + 1);
+        strncpy(except_str, PAC_EXCEPT_HEAD, PAC_EXCEPT_HEAD_LEN);
+        p = except_str + PAC_EXCEPT_HEAD_LEN;
+        for (i = 0; i < pac->except_num; i++) {
+            p += sprintf(p, PAC_EXCEPT_ENTRY, pac->except_list[i], pac->except_list[i]);
+        }
+    }
+
+    // Send pac file content
+    use_pac = 0;
+    if (pac->pac_path != NULL) {
+        if ((pacfile = fopen(pac->pac_path, "r")) != NULL) {
+            use_pac = 1;
+            exception_sent = 0;
+            found_pac_func = 0;
+            while ((len = fread(buf, 1, BUF_SIZE - 1, pacfile)) > 0) {
+                buf[len] = 0;
+                now_buf = buf;
+                if (!exception_sent) {
+                    pac_func_name = strstr(buf, PAC_FUNC_NAME);
+                    if (pac_func_name || found_pac_func) {
+                        if (pac_func_name) {
+                            found_pac_func = 1;
+                        } else {
+                            pac_func_name = buf;
+                        }
+                        pac_except_start = strchr(pac_func_name, '{');
+                        if (pac_except_start) {
+                            sent_num = (pac_except_start - buf) + 1;
+                            fwrite(buf, 1, sent_num, stream);
+                            if (except_str_len > 0) {
+                                fwrite(except_str, 1, except_str_len, stream);
+                            }
+                            exception_sent = 1;
+                            now_buf += sent_num;
+                            len -= sent_num;
+                        }
+                    }
+                }
+                if (len > 0) {
+                    fwrite(now_buf, 1, len, stream);
+                }       
+            }
+            fclose(pacfile);
+        }
+    }
+
+    // Send default pac content
+    if (!use_pac) {
+        fprintf(stream, PAC_DEFAULT_HEAD);
+        if (except_str_len > 0) {
+            fwrite(except_str, 1, except_str_len, stream);
+        }
+        fprintf(stream, PAC_DEFAULT_TAIL, pac->local_port, pac->local_port);
+    }
+
+    // Free exception string
+    if (except_str) {
+        free(except_str);
+        except_str = NULL;
+        except_str_len = 0;
+    }
+
+    // Close stream and free context
+    fflush(stream);
+    fclose(stream);
+    close_and_free_pac(EV_A_ pac);
+}
+
+static void pac_accept_cb(EV_P_ ev_io *w, int revents)
+{
+    struct pac_server_ctx *listener = (struct listen_ctx *) w;
+    int serverfd;
+    socklen_t socksize;
+    struct sockaddr_in client;
+    struct pac_server_ctx *pac;
+
+    memset(&client, 0, sizeof(client));
+    socksize = sizeof(struct sockaddr_in);
+    serverfd = accept(listener->fd, (struct sockaddr *) &client, &socksize);
+    if (serverfd < 0) {
+        ERROR("accept for pac");
+        return;
+    }
+    if (launchd) {
+        ev_timer_again(EV_A_ &launchd_timer);
+    }
+    setnonblocking(serverfd);
+    pac = (struct pac_server_ctx *) malloc(sizeof(struct pac_server_ctx));
+    pac->buf = (char *) malloc(BUF_SIZE);
+    pac->fd = serverfd;
+    pac->except_num = listener->except_num;
+    pac->except_list = listener->except_list;
+    pac->pac_path = listener->pac_path;
+    pac->local_port = listener->local_port;
+    ev_io_init(&pac->io, pac_recv_cb, serverfd, EV_READ);  
+    ev_io_start(EV_A_ &pac->io);
+}
+
+void close_and_free_pac(EV_P_ struct pac_server_ctx *ctx)
+{
+    if (ctx) {
+        ev_io_stop(EV_A_ &ctx->io);
+        close(ctx->fd);
+        if (ctx->buf) {
+            free(ctx->buf);
+            ctx->buf = NULL;
+        }
+        free(ctx);
+    }
+}
+
+static void launchd_timeout_cb(EV_P_ ev_timer *watcher, int revents)
+{
+    LOGD("Launchd timeout, service stopped.");
+    ev_break(EV_A_ EVBREAK_ALL);
+}
+
 int main (int argc, char **argv)
 {
 
@@ -806,20 +992,28 @@ int main (int argc, char **argv)
     char *pid_path = NULL;
     char *conf_path = NULL;
     char *iface = NULL;
+    char *pac_port = NULL;
+    char *pac_path = NULL;
+    char *plist_path = NULL;
 
     int remote_num = 0;
     remote_addr_t remote_addr[MAX_REMOTE_NUM];
     char *remote_port = NULL;
 
+    int except_num = 0;
+    except_addr_t except_list[MAX_EXCEPT_NUM];
+
     opterr = 0;
 
-    while ((c = getopt (argc, argv, "f:s:p:l:k:t:m:i:c:b:uv")) != -1)
+    while ((c = getopt (argc, argv, "f:s:p:l:k:t:m:i:c:b:x:y:e:d:uv")) != -1)
     {
         switch (c)
         {
         case 's':
-            remote_addr[remote_num].host = optarg;
-            remote_addr[remote_num++].port = NULL;
+            if (remote_num < MAX_REMOTE_NUM) {
+                remote_addr[remote_num].host = optarg;
+                remote_addr[remote_num++].port = NULL;
+            }
             break;
         case 'p':
             remote_port = optarg;
@@ -849,6 +1043,21 @@ int main (int argc, char **argv)
         case 'b':
             local_addr = optarg;
             break;
+        case 'x':
+            pac_port = optarg;
+            break;
+        case 'y':
+            pac_path = optarg;
+            break;
+        case 'e':
+            if (except_num < MAX_EXCEPT_NUM) {
+                except_list[except_num++] = optarg;
+            }
+            break;
+        case 'd':
+            launchd = 1;
+            plist_path = optarg;
+            break;
         case 'u':
             udprelay = 1;
             break;
@@ -875,12 +1084,20 @@ int main (int argc, char **argv)
                 remote_addr[i] = conf->remote_addr[i];
             }
         }
+        if (except_num == 0) {
+            except_num = conf->except_num;
+            for (i = 0; i < except_num; i++) {
+                except_list[i] = conf->except_list[i];
+            }
+        }
         if (remote_port == NULL) remote_port = conf->remote_port;
         if (local_addr == NULL) local_addr = conf->local_addr;
         if (local_port == NULL) local_port = conf->local_port;
         if (password == NULL) password = conf->password;
         if (method == NULL) method = conf->method;
         if (timeout == NULL) timeout = conf->timeout;
+        if (pac_port == NULL) pac_port = conf->pac_port;
+        if (pac_path == NULL) pac_path = conf->pac_path;
     }
 
     if (remote_num == 0 || remote_port == NULL ||
@@ -888,6 +1105,10 @@ int main (int argc, char **argv)
     {
         usage();
         exit(EXIT_FAILURE);
+    }
+
+    if (pac_port != NULL && strcmp(pac_port, local_port) == 0) {
+        FATAL("local port and pac port should be different.");
     }
 
     if (timeout == NULL) timeout = "10";
@@ -917,7 +1138,7 @@ int main (int argc, char **argv)
     listenfd = create_and_bind(local_addr, local_port);
     if (listenfd < 0)
     {
-        FATAL("bind() error..");
+        FATAL("bind() error.");
     }
     if (listen(listenfd, SOMAXCONN) == -1)
     {
@@ -954,6 +1175,36 @@ int main (int argc, char **argv)
     {
         LOGD("udprelay enabled.");
         udprelay_init(local_addr, local_port, remote_addr[0].host, remote_addr[0].port, m, iface);
+    }
+
+    // Setup pac server
+    if (pac_port != NULL) {
+        struct pac_server_ctx pac_ctx;
+        int pacfd;
+
+        pacfd = create_and_bind(local_addr, pac_port);
+        if (pacfd < 0) {
+            FATAL("bind error for pac.");
+        }
+        if (listen(pacfd, SOMAXCONN) == -1) {
+            FATAL("listen error for pac.");
+        }
+        setnonblocking(pacfd);
+        pac_ctx.fd = pacfd;
+        pac_ctx.except_num = except_num;
+        pac_ctx.except_list = except_list;
+        pac_ctx.pac_path = pac_path;
+        pac_ctx.local_port = local_port;
+        ev_io_init(&pac_ctx.io, pac_accept_cb, pacfd, EV_READ);
+        ev_io_start(EV_A_ &pac_ctx.io);
+
+        LOGD("pac server listening at port %s.", pac_port);
+    }
+
+    // Setup launchd timer
+    if (launchd) {
+        // ev_timer_init(&launchd_timer, launchd_timeout_cb, 0, local_timeout);
+        // ev_timer_again(EV_A_ &launchd_timer);
     }
 
     ev_run (loop, 0);
