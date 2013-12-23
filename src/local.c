@@ -16,6 +16,11 @@
 #include <pthread.h>
 #endif
 
+#ifdef __APPLE__
+#include <launch.h>
+#include <CoreFoundation/CoreFoundation.h>
+#endif
+
 #ifdef HAVE_CONFIG_H
 #include "config.h"
 #endif
@@ -50,6 +55,7 @@ int verbose = 0;
 int udprelay = 0;
 
 int launchd = 0;
+launchd_ctx_t launchd_ctx;
 ev_timer launchd_timer;
 
 #ifndef __MINGW32__
@@ -741,6 +747,11 @@ static void accept_cb (EV_P_ ev_io *w, int revents)
         ERROR("accept");
         return;
     }
+#ifdef __APPLE__
+    if (launchd) {
+        ev_timer_again(EV_A_ &launchd_timer);
+    }
+#endif
     setnonblocking(serverfd);
     int opt = 1;
     setsockopt(serverfd, IPPROTO_TCP, TCP_NODELAY, &opt, sizeof(opt));
@@ -796,6 +807,164 @@ static void accept_cb (EV_P_ ev_io *w, int revents)
     ev_timer_start(EV_A_ &remote->send_ctx->watcher);
 }
 
+static void conf_listen_ctx(struct listen_ctx *p_listen_ctx, int remote_num, \
+    char *remote_port, remote_addr_t *remote_addr, char *timeout, char *iface, int m)
+{
+    int index = 0;
+
+    p_listen_ctx->remote_num = remote_num;
+    p_listen_ctx->remote_addr = malloc(sizeof(remote_addr_t) * remote_num);
+    while (remote_num > 0) {
+        index = --remote_num;
+        if (remote_addr[index].port == NULL) {
+            remote_addr[index].port = remote_port;
+        }
+        p_listen_ctx->remote_addr[index] = remote_addr[index];
+    }
+    p_listen_ctx->timeout = atoi(timeout);
+    p_listen_ctx->iface = iface;
+    p_listen_ctx->method = m;
+}
+
+#ifdef __APPLE__
+static void launchd_reload_conf(void)
+{
+    int i;
+    if (launchd_ctx.conf_path != NULL) {
+        jconf_t *conf = read_jconf(launchd_ctx.conf_path);
+        if (strcmp(launchd_ctx.password, conf->password) != 0 || \
+            strcmp(launchd_ctx.method, conf->method) != 0) {
+            launchd_ctx.cipher_mode = enc_init(conf->password, conf->method);
+            launchd_ctx.password = conf->password;
+            launchd_ctx.method = conf->method;
+            LOGD("reloading ciphers... %s", conf->method);
+        }
+        launchd_ctx.except_num = conf->except_num;
+        launchd_ctx.except_list = conf->except_list;
+        launchd_ctx.pac_path = conf->pac_path;
+        launchd_ctx.local_port = conf->local_port;
+        for (i = 0; i < launchd_ctx.local_ctxs_len; i++) {
+            conf_listen_ctx(&launchd_ctx.local_ctxs[i], conf->remote_num, conf->remote_port, \
+                conf->remote_addr, conf->timeout, NULL, launchd_ctx.cipher_mode);
+        }
+        LOGD("config reloaded.");
+    }
+}
+
+static int launchd_set_proxy(CFDictionaryRef proxyDict)
+{
+    int ret = 1;
+    CFIndex index;
+    SCPreferencesRef pref = SCPreferencesCreate(0, CFSTR("shadow"), 0);
+    if (pref == NULL) {
+        LOGE("cannot read system preferences.");
+        return 0;
+    }
+    CFDictionaryRef services = SCPreferencesGetValue(pref, CFSTR("NetworkServices"));
+    if (services == NULL) {
+        LOGE("cannot read system network services.");
+        return 0;
+    }
+    CFDictionaryRef serviceDict = CFDictionaryCreateCopy(kCFAllocatorDefault, services);
+    CFIndex count = CFDictionaryGetCount(serviceDict);
+    CFTypeRef *keysTypeRef = (CFTypeRef *) malloc(count * sizeof(CFTypeRef));
+    CFDictionaryGetKeysAndValues(serviceDict, (const void **) keysTypeRef, NULL);
+    const void **allKeys = (const void **) keysTypeRef;
+    for (index = 0; index < count; index++) {
+        CFStringRef key = allKeys[index];
+        CFDictionaryRef dict = CFDictionaryGetValue(serviceDict, key);
+        CFStringRef rank = NULL;
+        if (dict) {
+            rank = CFDictionaryGetValue(dict, CFSTR("PrimaryRank"));
+        }
+        if (rank == NULL || CFStringCompare(rank, CFSTR("Never"), 0) != kCFCompareEqualTo) {
+            CFStringRef path = CFStringCreateWithFormat(kCFAllocatorDefault, NULL, CFSTR("/NetworkServices/%@/Proxies"), key);
+            ret &= SCPreferencesPathSetValue(pref, path, proxyDict);
+            CFRelease(path);
+        }
+    }
+    free(allKeys);
+    CFRelease(serviceDict);
+    ret &= SCPreferencesCommitChanges(pref);
+    ret &= SCPreferencesApplyChanges(pref);
+    SCPreferencesSynchronize(pref);
+    SCDynamicStoreRef store = SCDynamicStoreCreate(0, CFSTR("shadow"), 0, 0);
+    CFRelease(store);
+    CFRelease(pref);
+    return ret;
+}
+
+static int launchd_get_proxy_dict(int enabled, int is_socks)
+{
+    int i;
+    int ret;
+    CFMutableDictionaryRef proxyDict = CFDictionaryCreateMutable(kCFAllocatorDefault, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+    int zero = 0;
+    CFNumberRef zeroNumber = CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &zero);
+    if (enabled) {
+        int one = 1;
+        int two = 2;
+        CFNumberRef oneNumber = CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &one);
+        CFNumberRef twoNumber = CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &two);
+        if (is_socks) {
+            if (launchd_ctx.except_num > 0) {
+                CFMutableArrayRef exceptArray = CFArrayCreateMutable(kCFAllocatorDefault, 0, &kCFTypeArrayCallBacks);
+                for (i = 0; i < launchd_ctx.except_num; i++) {
+                    CFStringRef exceptAddr = CFStringCreateWithCString(kCFAllocatorDefault, launchd_ctx.except_list[i], kCFStringEncodingUTF8);
+                    CFArrayAppendValue(exceptArray, exceptAddr);
+                    CFRelease(exceptAddr);
+                }
+                CFDictionarySetValue(proxyDict, CFSTR("ExceptionsList"), exceptArray);
+                CFRelease(exceptArray);
+            }
+            int port = atoi(launchd_ctx.local_port);
+            CFNumberRef portNumber = CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &port);
+            CFDictionarySetValue(proxyDict, CFSTR("SOCKSEnable"), oneNumber);
+            CFDictionarySetValue(proxyDict, CFSTR("SOCKSProxy"), CFSTR("127.0.0.1"));
+            CFDictionarySetValue(proxyDict, CFSTR("SOCKSPort"), portNumber);
+            CFRelease(portNumber);
+        } else {
+            CFDictionarySetValue(proxyDict, CFSTR("HTTPEnable"), zeroNumber);
+            CFDictionarySetValue(proxyDict, CFSTR("HTTPProxyType"), twoNumber);
+            CFDictionarySetValue(proxyDict, CFSTR("HTTPSEnable"), zeroNumber);
+            CFDictionarySetValue(proxyDict, CFSTR("ProxyAutoConfigEnable"), oneNumber);
+            CFStringRef addrString = CFStringCreateWithFormat(kCFAllocatorDefault, NULL, CFSTR("http://127.0.0.1:%s/proxy.pac"), launchd_ctx.local_port);
+            CFDictionarySetValue(proxyDict, CFSTR("ProxyAutoConfigURLString"), addrString);
+            CFRelease(addrString);
+        }
+        CFRelease(oneNumber);
+        CFRelease(twoNumber);
+    } else {
+        CFDictionarySetValue(proxyDict, CFSTR("HTTPEnable"), zeroNumber);
+        CFDictionarySetValue(proxyDict, CFSTR("HTTPProxyType"), zeroNumber);
+        CFDictionarySetValue(proxyDict, CFSTR("HTTPSEnable"), zeroNumber);
+        CFDictionarySetValue(proxyDict, CFSTR("ProxyAutoConfigEnable"), zeroNumber);
+    }
+    CFRelease(zeroNumber);
+    ret = launchd_set_proxy(proxyDict);
+    CFRelease(proxyDict);
+    return ret;
+}
+
+static void launchd_timeout_cb(EV_P_ ev_timer *watcher, int revents)
+{
+    LOGD("launchd timeout, stopping service...");
+
+    // Release memory
+    if (launchd_ctx.local_ctxs) {
+        free(launchd_ctx.local_ctxs);
+        launchd_ctx.local_ctxs = NULL;
+    }
+    if (launchd_ctx.pac_ctxs) {
+        free(launchd_ctx.pac_ctxs);
+        launchd_ctx.pac_ctxs = NULL;
+    }
+
+    // Stop the loop
+    ev_break(EV_A_ EVBREAK_ALL);
+}
+#endif
+
 static void pac_recv_cb (EV_P_ ev_io *w, int revents)
 {
     char use_pac;
@@ -830,7 +999,7 @@ static void pac_recv_cb (EV_P_ ev_io *w, int revents)
     buf = pac->buf;
     buf[0] = 0;
 
-    // Receive and ignore HTTP request
+    // Receive and parse HTTP request
     len = recv(pac->fd, buf, BUF_SIZE - 1, 0);
     if (len == 0) {
         close_and_free_pac(EV_A_ pac);
@@ -853,26 +1022,82 @@ static void pac_recv_cb (EV_P_ ev_io *w, int revents)
     // Send HTTP response header
     fprintf(stream, PAC_RESPONSE);
 
+#ifdef __APPLE__
+    // Respond to launchd commands
+    if (launchd) {
+        int will_update;
+        int will_set_proxy;
+        int proxy_enabled;
+        int proxy_socks;
+        char *proxy_type;
+
+        buf[len] = '\0';
+        will_update = 0;
+        will_set_proxy = 0;
+        proxy_enabled = 0;
+        proxy_socks = 0;
+
+        if (strstr(buf, PAC_UPDATE_CONF)) {
+            will_update = 1;
+        } else if (strstr(buf, PAC_SET_PROXY_NONE)) {
+            will_set_proxy = 1;
+            proxy_enabled = 0;
+            proxy_type = PAC_SET_PROXY_NONE;
+        } else if (strstr(buf, PAC_SET_PROXY_SOCKS)) {
+            will_set_proxy = 1;
+            proxy_enabled = 1;
+            proxy_socks = 1;
+            proxy_type = PAC_SET_PROXY_SOCKS;
+        } else if (strstr(buf, PAC_SET_PROXY_PAC)) {
+            will_set_proxy = 1;
+            proxy_enabled = 1;
+            proxy_socks = 0;
+            proxy_type = PAC_SET_PROXY_PAC;
+        }
+
+        do {
+            if (will_update) {
+                launchd_reload_conf();
+                fprintf(stream, "Updated.\n");
+            } else if (will_set_proxy) {
+                if (launchd_get_proxy_dict(proxy_enabled, proxy_socks)) {
+                    fprintf(stream, "Updated.\n");
+                    LOGD("proxy is set: %s.", proxy_type);
+                } else {
+                    fprintf(stream, "Failed.\n");
+                    LOGE("failed to set proxy: %s.", proxy_type);
+                }
+            } else {
+                break;
+            }
+            fflush(stream);
+            fclose(stream);
+            close_and_free_pac(EV_A_ pac);
+            return;
+        } while (0);
+    }
+#endif
+
     // Generate exception list
     except_str = NULL;
     except_str_len = 0;
-    if (pac->except_num > 0) {
-        except_str_len = PAC_EXCEPT_HEAD_LEN + pac->except_num * PAC_EXCEPT_ENTRY_LEN;
-        for (i = 0; i < pac->except_num; i++) {
-            except_str_len += 2 * strlen(pac->except_list[i]);
+    if (launchd_ctx.except_num > 0) {
+        except_str_len = PAC_EXCEPT_HEAD_LEN + launchd_ctx.except_num * PAC_EXCEPT_ENTRY_LEN;
+        for (i = 0; i < launchd_ctx.except_num; i++) {
+            except_str_len += 2 * strlen(launchd_ctx.except_list[i]);
         }
         except_str = (char *) malloc(except_str_len + 1);
         strncpy(except_str, PAC_EXCEPT_HEAD, PAC_EXCEPT_HEAD_LEN);
         p = except_str + PAC_EXCEPT_HEAD_LEN;
-        for (i = 0; i < pac->except_num; i++) {
-            p += sprintf(p, PAC_EXCEPT_ENTRY, pac->except_list[i], pac->except_list[i]);
+        for (i = 0; i < launchd_ctx.except_num; i++) {
+            p += sprintf(p, PAC_EXCEPT_ENTRY, launchd_ctx.except_list[i], launchd_ctx.except_list[i]);
         }
     }
 
     // Send pac file content
     use_pac = 0;
-    if (pac->pac_path != NULL) {
-        if ((pacfile = fopen(pac->pac_path, "r")) != NULL) {
+    if (launchd_ctx.pac_path != NULL) {
+        if ((pacfile = fopen(launchd_ctx.pac_path, "r")) != NULL) {
             use_pac = 1;
             exception_sent = 0;
             found_pac_func = 0;
@@ -914,7 +1139,11 @@ static void pac_recv_cb (EV_P_ ev_io *w, int revents)
         if (except_str_len > 0) {
             fwrite(except_str, 1, except_str_len, stream);
         }
-        fprintf(stream, PAC_DEFAULT_TAIL, pac->local_port, pac->local_port);
+        if (launchd_ctx.except_ios) {
+            fprintf(stream, PAC_DEFAULT_TAIL_IOS, launchd_ctx.local_port);
+        } else {
+            fprintf(stream, PAC_DEFAULT_TAIL, launchd_ctx.local_port, launchd_ctx.local_port);
+        }
     }
 
     // Free exception string
@@ -945,17 +1174,15 @@ static void pac_accept_cb(EV_P_ ev_io *w, int revents)
         ERROR("accept for pac");
         return;
     }
+#ifdef __APPLE__
     if (launchd) {
         ev_timer_again(EV_A_ &launchd_timer);
     }
+#endif
     setnonblocking(serverfd);
     pac = (struct pac_server_ctx *) malloc(sizeof(struct pac_server_ctx));
     pac->buf = (char *) malloc(BUF_SIZE);
     pac->fd = serverfd;
-    pac->except_num = listener->except_num;
-    pac->except_list = listener->except_list;
-    pac->pac_path = listener->pac_path;
-    pac->local_port = listener->local_port;
     ev_io_init(&pac->io, pac_recv_cb, serverfd, EV_READ);  
     ev_io_start(EV_A_ &pac->io);
 }
@@ -973,17 +1200,12 @@ void close_and_free_pac(EV_P_ struct pac_server_ctx *ctx)
     }
 }
 
-static void launchd_timeout_cb(EV_P_ ev_timer *watcher, int revents)
-{
-    LOGD("Launchd timeout, service stopped.");
-    ev_break(EV_A_ EVBREAK_ALL);
-}
-
 int main (int argc, char **argv)
 {
 
     int i, c;
     int pid_flags = 0;
+    int launchd_timeout = 0;
     char *local_port = NULL;
     char *local_addr = NULL;
     char *password = NULL;
@@ -994,18 +1216,18 @@ int main (int argc, char **argv)
     char *iface = NULL;
     char *pac_port = NULL;
     char *pac_path = NULL;
-    char *plist_path = NULL;
 
     int remote_num = 0;
     remote_addr_t remote_addr[MAX_REMOTE_NUM];
     char *remote_port = NULL;
 
+    int except_ios = 0;
     int except_num = 0;
     except_addr_t except_list[MAX_EXCEPT_NUM];
 
     opterr = 0;
 
-    while ((c = getopt (argc, argv, "f:s:p:l:k:t:m:i:c:b:x:y:e:d:uv")) != -1)
+    while ((c = getopt (argc, argv, "f:s:p:l:k:t:m:i:c:b:x:y:e:d:nuv")) != -1)
     {
         switch (c)
         {
@@ -1056,7 +1278,13 @@ int main (int argc, char **argv)
             break;
         case 'd':
             launchd = 1;
-            plist_path = optarg;
+            launchd_timeout = atoi(optarg);
+            if (launchd_timeout == 0) {
+                launchd_timeout = LAUNCHD_DEFAULT_TIMEOUT;
+            }
+            break;
+        case 'n':
+            except_ios = 1;
             break;
         case 'u':
             udprelay = 1;
@@ -1098,12 +1326,18 @@ int main (int argc, char **argv)
         if (timeout == NULL) timeout = conf->timeout;
         if (pac_port == NULL) pac_port = conf->pac_port;
         if (pac_path == NULL) pac_path = conf->pac_path;
+    } else if (launchd) {
+        FATAL("config file is required in launchd mode");
     }
 
     if (remote_num == 0 || remote_port == NULL ||
             local_port == NULL || password == NULL)
     {
-        usage();
+        if (launchd) {
+            LOGE("missing parameters.");
+        } else {
+            usage();
+        }
         exit(EXIT_FAILURE);
     }
 
@@ -1115,7 +1349,7 @@ int main (int argc, char **argv)
 
     if (local_addr == NULL) local_addr = "0.0.0.0";
 
-    if (pid_flags)
+    if (pid_flags && !launchd)
     {
         USE_SYSLOG(argv[0]);
         demonize(pid_path);
@@ -1133,80 +1367,197 @@ int main (int argc, char **argv)
     LOGD("initialize ciphers... %s", method);
     int m = enc_init(password, method);
 
-    // Setup socket
-    int listenfd;
-    listenfd = create_and_bind(local_addr, local_port);
-    if (listenfd < 0)
-    {
-        FATAL("bind() error.");
-    }
-    if (listen(listenfd, SOMAXCONN) == -1)
-    {
-        FATAL("listen() error.");
-    }
-    setnonblocking(listenfd);
-    LOGD("server listening at port %s.", local_port);
+    // Save config for global use
+    launchd_ctx.conf_path = conf_path;
+    launchd_ctx.cipher_mode = m;
+    launchd_ctx.except_ios = except_ios;
+    launchd_ctx.except_num = except_num;
+    launchd_ctx.except_list = except_list;
+    launchd_ctx.pac_path = pac_path;
+    launchd_ctx.local_port = local_port;
+    launchd_ctx.password = password;
+    launchd_ctx.method = method;
 
-    // Setup proxy context
-    struct listen_ctx listen_ctx;
-    listen_ctx.remote_num = remote_num;
-    listen_ctx.remote_addr = malloc(sizeof(remote_addr_t) * remote_num);
-    while (remote_num > 0)
-    {
-        int index = --remote_num;
-        if (remote_addr[index].port == NULL) remote_addr[index].port = remote_port;
-        listen_ctx.remote_addr[index] = remote_addr[index];
-    }
-    listen_ctx.timeout = atoi(timeout);
-    listen_ctx.fd = listenfd;
-    listen_ctx.iface = iface;
-    listen_ctx.method = m;
-
+    // Setup libev loop
     struct ev_loop *loop = ev_default_loop(0);
-    if (!loop)
-    {
+    if (!loop) {
         FATAL("ev_loop error.");
     }
-    ev_io_init (&listen_ctx.io, accept_cb, listenfd, EV_READ);
-    ev_io_start (loop, &listen_ctx.io);
+
+    if (launchd) {
+#ifdef __APPLE__
+        launch_data_t sockets_dict;
+        launch_data_t checkin_response;
+        launch_data_t checkin_request;
+        launch_data_t listening_fd_array;
+        launch_data_t this_listening_fd;
+        int listen_ok;
+        int i;
+        int found_legal_fd;
+        struct listen_ctx *p_listen_ctx;
+        struct pac_server_ctx *p_pac_ctx;
+
+        // Setup for launchd mode
+        do {
+            listen_ok = -1;
+            if ((checkin_request = launch_data_new_string(LAUNCH_KEY_CHECKIN)) == NULL) {
+                LOGE("launch_data_new_string error");
+                break;
+            }
+            if ((checkin_response = launch_msg(checkin_request)) == NULL) {
+                LOGE("launch_msg error");
+                break;
+            }
+            listen_ok = 0;
+            if (LAUNCH_DATA_ERRNO == launch_data_get_type(checkin_response)) {
+                LOGE("check-in failed");
+                break;
+            }
+            sockets_dict = launch_data_dict_lookup(checkin_response, LAUNCH_JOBKEY_SOCKETS);
+            if (NULL == sockets_dict) {
+                LOGE("no sockets found to answer requests on");
+                break;
+            }
+
+            // Setup for local socks port
+            listening_fd_array = launch_data_dict_lookup(sockets_dict, LAUNCHD_NAME_SOCKS);
+            if (NULL == listening_fd_array) {
+                LOGE("no %s entry found in plist", LAUNCHD_NAME_SOCKS);
+                break;
+            }
+            launchd_ctx.local_ctxs_len = launch_data_array_get_count(listening_fd_array);
+            if (launchd_ctx.local_ctxs_len <= 0) {
+                LOGE("no socks fd found from launchd");
+                break;
+            }
+            launchd_ctx.local_ctxs = (struct listen_ctx *) malloc(sizeof(struct listen_ctx) * launchd_ctx.local_ctxs_len);
+            found_legal_fd = 0;
+            for (i = 0; i < launchd_ctx.local_ctxs_len; i++) {
+                p_listen_ctx = &launchd_ctx.local_ctxs[i];
+                this_listening_fd = launch_data_array_get_index(listening_fd_array, i);
+                p_listen_ctx->fd = launch_data_get_fd(this_listening_fd);
+                if (p_listen_ctx->fd >= 0) {
+                    conf_listen_ctx(p_listen_ctx, remote_num, remote_port, remote_addr, timeout, iface, m);
+                    ev_io_init(&p_listen_ctx->io, accept_cb, p_listen_ctx->fd, EV_READ);
+                    ev_io_start(EV_A_ &p_listen_ctx->io);
+                    if (!found_legal_fd) {
+                        found_legal_fd = 1;
+                    }
+                }
+            }
+            if (!found_legal_fd) {
+                free(launchd_ctx.local_ctxs);
+                launchd_ctx.local_ctxs = NULL;
+                LOGE("no legal socks fd found from launchd");
+                break;
+            }
+
+            // Setup for pac port
+            if (pac_port != NULL) {
+                listening_fd_array = launch_data_dict_lookup(sockets_dict, LAUNCHD_NAME_PAC);
+                if (NULL == listening_fd_array) {
+                    LOGE("no %s entry found in plist", LAUNCHD_NAME_PAC);
+                    break;
+                }
+                launchd_ctx.pac_ctxs_len = launch_data_array_get_count(listening_fd_array);
+                if (launchd_ctx.pac_ctxs_len <= 0) {
+                    LOGE("no pac fd found from launchd");
+                    break;
+                }
+                launchd_ctx.pac_ctxs = (struct pac_server_ctx *) malloc(sizeof(struct pac_server_ctx) * launchd_ctx.pac_ctxs_len);
+                found_legal_fd = 0;
+                for (i = 0; i < launchd_ctx.pac_ctxs_len; i++) {
+                    p_pac_ctx = &launchd_ctx.pac_ctxs[i];
+                    this_listening_fd = launch_data_array_get_index(listening_fd_array, i);
+                    p_pac_ctx->fd = launch_data_get_fd(this_listening_fd);
+                    if (p_pac_ctx->fd >= 0) {
+                        ev_io_init(&p_pac_ctx->io, pac_accept_cb, p_pac_ctx->fd, EV_READ);
+                        ev_io_start(EV_A_ &p_pac_ctx->io);
+                        if (!found_legal_fd) {
+                            found_legal_fd = 1;
+                        } 
+                    }
+                }
+                if (!found_legal_fd) {
+                    free(launchd_ctx.pac_ctxs);
+                    launchd_ctx.pac_ctxs = NULL;
+                    LOGE("no legal socks fd found from launchd");
+                    break;
+                }
+            }
+
+            // Setup succeed
+            listen_ok = 1;
+        } while (0);
+
+        if (listen_ok >= 0) {
+            launch_data_free(checkin_response);
+            launch_data_free(checkin_request);
+        }
+        if (listen_ok != 1) {
+            FATAL("failed to start by launchd");
+        }
+
+        // Start launchd auto exit timer
+        ev_timer_init(&launchd_timer, launchd_timeout_cb, 0, launchd_timeout);
+        ev_timer_again(EV_A_ &launchd_timer);
+        LOGD("running in launchd mode...");
+#else
+        FATAL("launchd mode is only for darwin.");
+#endif
+
+    } else {
+
+        // Setup socket
+        int listenfd;
+        listenfd = create_and_bind(local_addr, local_port);
+        if (listenfd < 0)
+        {
+            FATAL("bind() error.");
+        }
+        if (listen(listenfd, SOMAXCONN) == -1)
+        {
+            FATAL("listen() error.");
+        }
+        setnonblocking(listenfd);
+        LOGD("server listening at port %s.", local_port);
+
+        // Setup proxy context
+        struct listen_ctx listen_ctx;
+        listen_ctx.fd = listenfd;
+        conf_listen_ctx(&listen_ctx, remote_num, remote_port, remote_addr, timeout, iface, m);
+
+        ev_io_init (&listen_ctx.io, accept_cb, listenfd, EV_READ);
+        ev_io_start (loop, &listen_ctx.io);
+
+        // Setup pac server
+        if (pac_port != NULL) {
+            struct pac_server_ctx pac_ctx;
+            int pacfd;
+
+            pacfd = create_and_bind(local_addr, pac_port);
+            if (pacfd < 0) {
+                FATAL("bind error for pac.");
+            }
+            if (listen(pacfd, SOMAXCONN) == -1) {
+                FATAL("listen error for pac.");
+            }
+            setnonblocking(pacfd);
+            pac_ctx.fd = pacfd;
+            ev_io_init(&pac_ctx.io, pac_accept_cb, pacfd, EV_READ);
+            ev_io_start(EV_A_ &pac_ctx.io);
+
+            LOGD("pac server listening at port %s.", pac_port);
+        }
+    }
 
     // Setup UDP
-    if (udprelay)
-    {
+    if (udprelay) {
         LOGD("udprelay enabled.");
         udprelay_init(local_addr, local_port, remote_addr[0].host, remote_addr[0].port, m, iface);
     }
 
-    // Setup pac server
-    if (pac_port != NULL) {
-        struct pac_server_ctx pac_ctx;
-        int pacfd;
-
-        pacfd = create_and_bind(local_addr, pac_port);
-        if (pacfd < 0) {
-            FATAL("bind error for pac.");
-        }
-        if (listen(pacfd, SOMAXCONN) == -1) {
-            FATAL("listen error for pac.");
-        }
-        setnonblocking(pacfd);
-        pac_ctx.fd = pacfd;
-        pac_ctx.except_num = except_num;
-        pac_ctx.except_list = except_list;
-        pac_ctx.pac_path = pac_path;
-        pac_ctx.local_port = local_port;
-        ev_io_init(&pac_ctx.io, pac_accept_cb, pacfd, EV_READ);
-        ev_io_start(EV_A_ &pac_ctx.io);
-
-        LOGD("pac server listening at port %s.", pac_port);
-    }
-
-    // Setup launchd timer
-    if (launchd) {
-        // ev_timer_init(&launchd_timer, launchd_timeout_cb, 0, local_timeout);
-        // ev_timer_again(EV_A_ &launchd_timer);
-    }
-
+    // Start loop
     ev_run (loop, 0);
 
 #ifdef __MINGW32__

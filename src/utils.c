@@ -107,7 +107,8 @@ void usage()
     printf("          [-x <pac_port>]            port number of local pac file server\n");
     printf("          [-y <pac_path>]            pac auto proxy file path\n");
     printf("          [-e <except_list>]         white list for proxy\n");
-    printf("          [-d <plist_path>]          launchd mode with plist config, darwin only\n");
+    printf("          [-d <timeout>]             launchd mode with timeout, darwin only\n");
+    printf("          [-n]                       non-compatible pac syntax for iOS\n");
     printf("\n");
     printf("          [-u]                       udprelay mode to supprot udp traffic\n");
     printf("                                     only available in local and server modes\n");

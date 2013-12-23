@@ -34,10 +34,13 @@ AM_PROG_CC_C_O
 dnl Checks for libev
 m4_include([libev/libev.m4])
 
-dnl Add library for mingw
+dnl Add library for mingw and darwin
 case $host in
   *-mingw*)
     LIBS="$LIBS -lgdi32 -lws2_32 -lcrypt32"
+    ;;
+  *-darwin*)
+    LIBS="$LIBS -framework CoreFoundation -framework SystemConfiguration"
     ;;
   *)
     ;;

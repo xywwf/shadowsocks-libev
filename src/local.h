@@ -9,10 +9,19 @@
 #define PAC_FUNC_NAME "FindProxyForURL"
 #define PAC_DEFAULT_HEAD "function FindProxyForURL(url, host) {\n"
 #define PAC_DEFAULT_TAIL "    if (host == '127.0.0.1' || host == 'localhost')\n        return 'DIRECT'\n    return 'SOCKS5 127.0.0.1:%s; SOCKS 127.0.0.1:%s';\n}\n"
+#define PAC_DEFAULT_TAIL_IOS "    if (host == '127.0.0.1' || host == 'localhost')\n        return 'DIRECT'\n    return 'SOCKS 127.0.0.1:%s';\n}\n"
 #define PAC_EXCEPT_HEAD "\n    var lhost = host.toLowerCase();\n"
 #define PAC_EXCEPT_ENTRY "    if (shExpMatch(lhost, '%s')) return 'DIRECT';\n    if (shExpMatch(lhost, '*.%s')) return 'DIRECT';\n"
 #define PAC_EXCEPT_HEAD_LEN (sizeof(PAC_EXCEPT_HEAD) - 1)
 #define PAC_EXCEPT_ENTRY_LEN (sizeof(PAC_EXCEPT_ENTRY) - 5)
+#define PAC_UPDATE_CONF "Update-Conf"
+#define PAC_SET_PROXY_PAC "SetProxy-Pac"
+#define PAC_SET_PROXY_SOCKS "SetProxy-Socks"
+#define PAC_SET_PROXY_NONE "SetProxy-None"
+
+#define LAUNCHD_NAME_SOCKS "SOCKS"
+#define LAUNCHD_NAME_PAC "PAC"
+#define LAUNCHD_DEFAULT_TIMEOUT 480
 
 struct listen_ctx
 {
@@ -38,10 +47,6 @@ struct pac_server_ctx
     ev_io io;
     int fd;
     char *buf;
-    char *pac_path;
-    char *local_port;
-    int except_num;
-    except_addr_t *except_list;
 };
 
 struct server
@@ -77,6 +82,21 @@ struct remote
     struct server *server;
 };
 
+typedef struct {
+    int local_ctxs_len;
+    struct listen_ctx *local_ctxs;
+    int pac_ctxs_len;
+    struct pac_server_ctx *pac_ctxs;
+    char *conf_path;
+    char *pac_path;
+    char *local_port;
+    int except_ios;
+    int except_num;
+    except_addr_t *except_list;
+    int cipher_mode;
+    char *method;
+    char *password;
+} launchd_ctx_t;
 
 static void accept_cb (EV_P_ ev_io *w, int revents);
 static void server_recv_cb (EV_P_ ev_io *w, int revents);
@@ -94,5 +114,25 @@ static void close_and_free_pac(EV_P_ struct pac_server_ctx *ctx);
 
 struct remote* new_remote(int fd, int timeout);
 struct server* new_server(int fd, int method);
+
+#ifdef __APPLE__
+typedef const struct __SCPreferences *  SCPreferencesRef;
+SCPreferencesRef SCPreferencesCreate (CFAllocatorRef allocator, CFStringRef name, CFStringRef prefsID);
+typedef const struct __SCDynamicStore * SCDynamicStoreRef;
+typedef void (*SCDynamicStoreCallBack) (SCDynamicStoreRef store, CFArrayRef changedKeys, void *info);
+typedef struct {
+    CFIndex     version;
+    void *      info;
+    const void  *(*retain)(const void *info);
+    void        (*release)(const void *info);
+    CFStringRef (*copyDescription)(const void *info);
+} SCDynamicStoreContext;
+SCDynamicStoreRef SCDynamicStoreCreate (CFAllocatorRef allocator, CFStringRef name, SCDynamicStoreCallBack callout, SCDynamicStoreContext *context);
+CFPropertyListRef SCPreferencesGetValue(SCPreferencesRef prefs, CFStringRef key);
+Boolean SCPreferencesPathSetValue (SCPreferencesRef prefs, CFStringRef path, CFDictionaryRef value);
+Boolean SCPreferencesCommitChanges (SCPreferencesRef prefs);
+Boolean SCPreferencesApplyChanges (SCPreferencesRef prefs);
+void SCPreferencesSynchronize (SCPreferencesRef prefs);
+#endif
 
 #endif // _LOCAL_H
