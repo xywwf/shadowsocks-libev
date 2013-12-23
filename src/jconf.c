@@ -110,6 +110,8 @@ jconf_t *read_jconf(const char* file)
     if (obj->type == json_object)
     {
         int i, j;
+
+        conf.except_num = 0;
         for (i = 0; i < obj->u.object.length; i++)
         {
             char *name = obj->u.object.values[i].name;

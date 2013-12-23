@@ -841,6 +841,7 @@ static void launchd_reload_conf(void)
         }
         launchd_ctx.except_num = conf->except_num;
         launchd_ctx.except_list = conf->except_list;
+        launchd_ctx.pac_port = conf->pac_port;
         launchd_ctx.pac_path = conf->pac_path;
         launchd_ctx.local_port = conf->local_port;
         for (i = 0; i < launchd_ctx.local_ctxs_len; i++) {
@@ -928,7 +929,7 @@ static int launchd_get_proxy_dict(int enabled, int is_socks)
             CFDictionarySetValue(proxyDict, CFSTR("HTTPProxyType"), twoNumber);
             CFDictionarySetValue(proxyDict, CFSTR("HTTPSEnable"), zeroNumber);
             CFDictionarySetValue(proxyDict, CFSTR("ProxyAutoConfigEnable"), oneNumber);
-            CFStringRef addrString = CFStringCreateWithFormat(kCFAllocatorDefault, NULL, CFSTR("http://127.0.0.1:%s/proxy.pac"), launchd_ctx.local_port);
+            CFStringRef addrString = CFStringCreateWithFormat(kCFAllocatorDefault, NULL, CFSTR("http://127.0.0.1:%s/proxy.pac"), launchd_ctx.pac_port);
             CFDictionarySetValue(proxyDict, CFSTR("ProxyAutoConfigURLString"), addrString);
             CFRelease(addrString);
         }
@@ -1374,6 +1375,7 @@ int main (int argc, char **argv)
     launchd_ctx.except_num = except_num;
     launchd_ctx.except_list = except_list;
     launchd_ctx.pac_path = pac_path;
+    launchd_ctx.pac_port = pac_port;
     launchd_ctx.local_port = local_port;
     launchd_ctx.password = password;
     launchd_ctx.method = method;

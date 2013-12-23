@@ -89,6 +89,7 @@ typedef struct {
     struct pac_server_ctx *pac_ctxs;
     char *conf_path;
     char *pac_path;
+    char *pac_port;
     char *local_port;
     int except_ios;
     int except_num;
