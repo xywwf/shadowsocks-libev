@@ -27,12 +27,8 @@ static char *to_string(const json_value *value)
     {
         return "null";
     }
-    else
-    {
-        LOGE("%d", value->type);
-        FATAL("Invalid config format.");
-    }
-    return 0;
+    LOGE("Invalid config format: %d", value->type);
+    return NULL;
 }
 
 static int to_int(const json_value *value)
@@ -52,9 +48,39 @@ static int to_int(const json_value *value)
     return 0;
 }
 
-static void parse_addr(const char *str, remote_addr_t *addr) {
+static void save_str(char **conf_p, char *value_str)
+{
+    if (conf_p == NULL) {
+        return;
+    }
+    char *conf_str = *conf_p;
+    if (conf_str != NULL) {
+        if (conf_str != value_str) {
+            free(conf_str);
+            *conf_p = value_str;
+        }
+    } else {
+        *conf_p = value_str;
+    }
+}
+
+static void save_json_value(char **conf_p, const json_value *value)
+{
+    if (conf_p == NULL) {
+        return;
+    }
+    save_str(conf_p, to_string(value));
+}
+
+static void parse_addr(const json_value *value, remote_addr_t *addr) {
     int ret = -1;
     char *pch;
+    char *str;
+
+    if (addr == NULL) {
+        return;
+    }
+    str = to_string(value);
     pch = strchr(str, ':');
     while (pch != NULL)
     {
@@ -63,13 +89,13 @@ static void parse_addr(const char *str, remote_addr_t *addr) {
     }
     if (ret == -1)
     {
-        addr->host = str;
+        save_str(&addr->host, str);
         addr->port = NULL;
     }
     else
     {
-        addr->host = ss_strndup(str, ret);
-        addr->port = str + ret + 1;
+        save_str(&addr->host, ss_strndup(str, ret));
+        save_str(&addr->port, str + ret + 1);
     }
 }
 
@@ -104,7 +130,8 @@ jconf_t *read_jconf(const char* file)
 
     if (obj == NULL)
     {
-        FATAL(error_buf);
+        LOGE("JSON parse error: %s", error_buf);
+        FATAL("config parse failed.");
     }
 
     if (obj->type == json_object)
@@ -124,13 +151,13 @@ jconf_t *read_jconf(const char* file)
                     {
                         if (j >= MAX_REMOTE_NUM) break;
                         json_value *v = value->u.array.values[j];
-                        parse_addr(to_string(v), conf.remote_addr + j);
+                        parse_addr(v, conf.remote_addr + j);
                         conf.remote_num = j + 1;
                     }
                 }
                 else if (value->type == json_string)
                 {
-                    conf.remote_addr[0].host = to_string(value);
+                    save_json_value(&conf.remote_addr[0].host, value);
                     conf.remote_addr[0].port = NULL;
                     conf.remote_num = 1;
                 }
@@ -143,47 +170,47 @@ jconf_t *read_jconf(const char* file)
                     {
                         if (j >= MAX_EXCEPT_NUM) break;
                         json_value *v = value->u.array.values[j];
-                        conf.except_list[j] = to_string(v);
+                        save_json_value(&conf.except_list[j], v);
                         conf.except_num = j + 1;
                     }
                 }
                 else if (value->type == json_string)
                 {
-                    conf.except_list[0] = to_string(value);
+                    save_json_value(&conf.except_list[0], value);
                     conf.except_num = 1;
                 }
             }
             else if (strcmp(name, "server_port") == 0)
             {
-                conf.remote_port = to_string(value);
+                save_json_value(&conf.remote_port, value);
             }
             else if (strcmp(name, "local") == 0)
             {
-                conf.local_addr = to_string(value);
+                save_json_value(&conf.local_addr, value);
             }
             else if (strcmp(name, "local_port") == 0)
             {
-                conf.local_port = to_string(value);
+                save_json_value(&conf.local_port, value);
             }
             else if (strcmp(name, "password") == 0)
             {
-                conf.password = to_string(value);
+                save_json_value(&conf.password, value);
             }
             else if (strcmp(name, "method") == 0)
             {
-                conf.method = to_string(value);
+                save_json_value(&conf.method, value);
             }
             else if (strcmp(name, "timeout") == 0)
             {
-                conf.timeout = to_string(value);
+                save_json_value(&conf.timeout, value);
             }
             else if (strcmp(name, "pac_port") == 0)
             {
-                conf.pac_port = to_string(value);
+                save_json_value(&conf.pac_port, value);
             }
             else if (strcmp(name, "pac_path") == 0)
             {
-                conf.pac_path = to_string(value);
+                save_json_value(&conf.pac_path, value);
             }
         }
     }
