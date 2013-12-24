@@ -139,6 +139,8 @@ jconf_t *read_jconf(const char* file)
         int i, j;
 
         conf.except_num = 0;
+        save_str(&conf.pac_path, NULL);
+
         for (i = 0; i < obj->u.object.length; i++)
         {
             char *name = obj->u.object.values[i].name;
