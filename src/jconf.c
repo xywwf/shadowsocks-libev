@@ -48,7 +48,7 @@ static int to_int(const json_value *value)
     return 0;
 }
 
-static void save_str(char **conf_p, char *value_str)
+void save_str(char **conf_p, char *value_str)
 {
     if (conf_p == NULL) {
         return;

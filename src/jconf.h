@@ -32,5 +32,6 @@ typedef struct
 } jconf_t;
 
 jconf_t *read_jconf(const char* file);
+void save_str(char **conf_p, char *value_str);
 
 #endif // _JCONF_H

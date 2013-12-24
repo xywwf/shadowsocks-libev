@@ -835,8 +835,8 @@ static void launchd_reload_conf(void)
         if (strcmp(launchd_ctx.password, conf->password) != 0 || \
             strcmp(launchd_ctx.method, conf->method) != 0) {
             launchd_ctx.cipher_mode = enc_init(conf->password, conf->method);
-            launchd_ctx.password = conf->password;
-            launchd_ctx.method = conf->method;
+            save_str(&launchd_ctx.password, strdup(conf->password));
+            save_str(&launchd_ctx.method, strdup(conf->method));
             LOGD("reloading ciphers... %s", conf->method);
         }
         launchd_ctx.except_num = conf->except_num;
@@ -1377,8 +1377,8 @@ int main (int argc, char **argv)
     launchd_ctx.pac_path = pac_path;
     launchd_ctx.pac_port = pac_port;
     launchd_ctx.local_port = local_port;
-    launchd_ctx.password = password;
-    launchd_ctx.method = method;
+    save_str(&launchd_ctx.password, strdup(conf->password));
+    save_str(&launchd_ctx.method, strdup(conf->method));
 
     // Setup libev loop
     struct ev_loop *loop = ev_default_loop(0);
