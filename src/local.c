@@ -1162,7 +1162,7 @@ static void pac_recv_cb (EV_P_ ev_io *w, int revents)
 
 static void pac_accept_cb(EV_P_ ev_io *w, int revents)
 {
-    struct pac_server_ctx *listener = (struct listen_ctx *) w;
+    struct pac_server_ctx *listener = (struct pac_server_ctx *) w;
     int serverfd;
     socklen_t socksize;
     struct sockaddr_in client;

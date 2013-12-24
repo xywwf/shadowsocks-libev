@@ -116,6 +116,10 @@ static void close_and_free_pac(EV_P_ struct pac_server_ctx *ctx);
 struct remote* new_remote(int fd, int timeout);
 struct server* new_server(int fd, int method);
 
+int udprelay_init(const char *server_host, const char *server_port,
+             const char *remote_host, const char *remote_port,
+             int method, const char *interface_name);
+
 #ifdef __APPLE__
 typedef const struct __SCPreferences *  SCPreferencesRef;
 SCPreferencesRef SCPreferencesCreate (CFAllocatorRef allocator, CFStringRef name, CFStringRef prefsID);
