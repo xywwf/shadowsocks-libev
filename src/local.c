@@ -1377,8 +1377,8 @@ int main (int argc, char **argv)
     launchd_ctx.pac_path = pac_path;
     launchd_ctx.pac_port = pac_port;
     launchd_ctx.local_port = local_port;
-    save_str(&launchd_ctx.password, strdup(conf->password));
-    save_str(&launchd_ctx.method, strdup(conf->method));
+    save_str(&launchd_ctx.password, strdup(password));
+    save_str(&launchd_ctx.method, strdup(method));
 
     // Setup libev loop
     struct ev_loop *loop = ev_default_loop(0);
