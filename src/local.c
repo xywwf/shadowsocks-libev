@@ -813,13 +813,12 @@ static void conf_listen_ctx(struct listen_ctx *p_listen_ctx, int remote_num, \
     int index = 0;
 
     p_listen_ctx->remote_num = remote_num;
-    p_listen_ctx->remote_addr = malloc(sizeof(remote_addr_t) * remote_num);
+    p_listen_ctx->remote_addr = remote_addr;
     while (remote_num > 0) {
         index = --remote_num;
         if (remote_addr[index].port == NULL) {
             remote_addr[index].port = remote_port;
         }
-        p_listen_ctx->remote_addr[index] = remote_addr[index];
     }
     p_listen_ctx->timeout = atoi(timeout);
     p_listen_ctx->iface = iface;
@@ -1012,11 +1011,13 @@ static void pac_recv_cb (EV_P_ ev_io *w, int revents)
         }
         return;
     }
+    buf[len] = '\0';
 
     // Open received data as stream
     stream = fdopen(pac->fd, "w");
     if (stream == NULL) {
         ERROR("fdopen");
+        close_and_free_pac(EV_A_ pac);
         return;
     }
 
@@ -1032,7 +1033,6 @@ static void pac_recv_cb (EV_P_ ev_io *w, int revents)
         int proxy_socks;
         char *proxy_type;
 
-        buf[len] = '\0';
         will_update = 0;
         will_set_proxy = 0;
         proxy_enabled = 0;
@@ -1059,13 +1059,13 @@ static void pac_recv_cb (EV_P_ ev_io *w, int revents)
         do {
             if (will_update) {
                 launchd_reload_conf();
-                fprintf(stream, "Updated.\n");
+                fprintf(stream, PAC_RESPONSE_SUCC);
             } else if (will_set_proxy) {
                 if (launchd_get_proxy_dict(proxy_enabled, proxy_socks)) {
-                    fprintf(stream, "Updated.\n");
+                    fprintf(stream, PAC_RESPONSE_SUCC);
                     LOGD("proxy is set: %s.", proxy_type);
                 } else {
-                    fprintf(stream, "Failed.\n");
+                    fprintf(stream, PAC_RESPONSE_FAIL);
                     LOGE("failed to set proxy: %s.", proxy_type);
                 }
             } else {
@@ -1554,7 +1554,7 @@ int main (int argc, char **argv)
     }
 
     // Setup UDP
-    if (udprelay) {
+    if (udprelay && !launchd) {
         LOGD("udprelay enabled.");
         udprelay_init(local_addr, local_port, remote_addr[0].host, remote_addr[0].port, m, iface);
     }

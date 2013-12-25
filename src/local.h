@@ -18,6 +18,8 @@
 #define PAC_SET_PROXY_PAC "SetProxy-Pac"
 #define PAC_SET_PROXY_SOCKS "SetProxy-Socks"
 #define PAC_SET_PROXY_NONE "SetProxy-None"
+#define PAC_RESPONSE_SUCC "Updated.\n"
+#define PAC_RESPONSE_FAIL "Failed.\n"
 
 #define LAUNCHD_NAME_SOCKS "SOCKS"
 #define LAUNCHD_NAME_PAC "PAC"
