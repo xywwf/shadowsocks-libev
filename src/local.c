@@ -863,6 +863,7 @@ static int launchd_set_proxy(CFDictionaryRef proxyDict)
     CFDictionaryRef services = SCPreferencesGetValue(pref, CFSTR("NetworkServices"));
     if (services == NULL) {
         LOGE("cannot read system network services.");
+        CFRelease(pref);
         return 0;
     }
     CFDictionaryRef serviceDict = CFDictionaryCreateCopy(kCFAllocatorDefault, services);
