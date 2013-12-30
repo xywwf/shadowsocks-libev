@@ -908,16 +908,33 @@ static int launchd_get_proxy_dict(int enabled, int is_socks)
         CFNumberRef oneNumber = CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &one);
         CFNumberRef twoNumber = CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &two);
         if (is_socks) {
+            int local_loop = 0;
+            int local_host = 0;
+            CFMutableArrayRef exceptArray = CFArrayCreateMutable(kCFAllocatorDefault, 0, &kCFTypeArrayCallBacks);
             if (launchd_ctx.except_num > 0) {
-                CFMutableArrayRef exceptArray = CFArrayCreateMutable(kCFAllocatorDefault, 0, &kCFTypeArrayCallBacks);
                 for (i = 0; i < launchd_ctx.except_num; i++) {
-                    CFStringRef exceptAddr = CFStringCreateWithCString(kCFAllocatorDefault, launchd_ctx.except_list[i], kCFStringEncodingUTF8);
-                    CFArrayAppendValue(exceptArray, exceptAddr);
-                    CFRelease(exceptAddr);
+                    char *except_addr = launchd_ctx.except_list[i];
+                    if (except_addr != NULL) {
+                        if (strcmp(except_addr, "127.0.0.1") == 0) {
+                            local_loop = 1;
+                        }
+                        if (strcmp(except_addr, "localhost") == 0) {
+                            local_host = 1;
+                        }
+                        CFStringRef exceptAddr = CFStringCreateWithCString(kCFAllocatorDefault, except_addr, kCFStringEncodingUTF8);
+                        CFArrayAppendValue(exceptArray, exceptAddr);
+                        CFRelease(exceptAddr);
+                    }
                 }
-                CFDictionarySetValue(proxyDict, CFSTR("ExceptionsList"), exceptArray);
-                CFRelease(exceptArray);
             }
+            if (!local_loop) {
+                CFArrayAppendValue(exceptArray, CFSTR("127.0.0.1"));
+            }
+            if (!local_host) {
+                CFArrayAppendValue(exceptArray, CFSTR("localhost"));
+            }
+            CFDictionarySetValue(proxyDict, CFSTR("ExceptionsList"), exceptArray);
+            CFRelease(exceptArray);
             int port = atoi(launchd_ctx.local_port);
             CFNumberRef portNumber = CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &port);
             CFDictionarySetValue(proxyDict, CFSTR("SOCKSEnable"), oneNumber);
