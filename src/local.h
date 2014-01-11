@@ -6,6 +6,8 @@
 #include "jconf.h"
 #include "include.h"
 
+#define SEND_CONST_STR(fd, s) (send(fd, s, (sizeof(s) - 1), 0))
+
 #define PAC_RESPONSE "HTTP/1.1 200 OK\r\nServer: shadowsocks pac server\r\nContent-Type: application/x-ns-proxy-autoconfig\r\nConnection: close\r\n\r\n"
 #define PAC_FUNC_NAME "FindProxyForURL"
 #define PAC_DEFAULT_HEAD "function FindProxyForURL(url, host) {\n"

@@ -993,7 +993,6 @@ static void pac_recv_cb (EV_P_ ev_io *w, int revents)
     int except_str_len;
     int i;
 
-    FILE *stream;
     FILE *pacfile;
     char *buf;
     char *now_buf;
@@ -1031,16 +1030,8 @@ static void pac_recv_cb (EV_P_ ev_io *w, int revents)
     }
     buf[len] = '\0';
 
-    // Open received data as stream
-    stream = fdopen(pac->fd, "w");
-    if (stream == NULL) {
-        ERROR("fdopen");
-        close_and_free_pac(EV_A_ pac);
-        return;
-    }
-
     // Send HTTP response header
-    fprintf(stream, PAC_RESPONSE);
+    SEND_CONST_STR(pac->fd, PAC_RESPONSE);
 
 #ifdef __APPLE__
     // Respond to launchd commands
@@ -1077,20 +1068,18 @@ static void pac_recv_cb (EV_P_ ev_io *w, int revents)
         do {
             if (will_update) {
                 launchd_reload_conf();
-                fprintf(stream, PAC_RESPONSE_SUCC);
+                SEND_CONST_STR(pac->fd, PAC_RESPONSE_SUCC);
             } else if (will_set_proxy) {
                 if (launchd_get_proxy_dict(proxy_enabled, proxy_socks)) {
-                    fprintf(stream, PAC_RESPONSE_SUCC);
+                    SEND_CONST_STR(pac->fd, PAC_RESPONSE_SUCC);
                     LOGD("proxy is set: %s.", proxy_type);
                 } else {
-                    fprintf(stream, PAC_RESPONSE_FAIL);
+                    SEND_CONST_STR(pac->fd, PAC_RESPONSE_FAIL);
                     LOGE("failed to set proxy: %s.", proxy_type);
                 }
             } else {
                 break;
             }
-            fflush(stream);
-            fclose(stream);
             close_and_free_pac(EV_A_ pac);
             return;
         } while (0);
@@ -1134,9 +1123,9 @@ static void pac_recv_cb (EV_P_ ev_io *w, int revents)
                         pac_except_start = strchr(pac_func_name, '{');
                         if (pac_except_start) {
                             sent_num = (pac_except_start - buf) + 1;
-                            fwrite(buf, 1, sent_num, stream);
+                            send(pac->fd, buf, sent_num, 0);
                             if (except_str_len > 0) {
-                                fwrite(except_str, 1, except_str_len, stream);
+                                send(pac->fd, except_str, except_str_len, 0);
                             }
                             exception_sent = 1;
                             now_buf += sent_num;
@@ -1145,8 +1134,8 @@ static void pac_recv_cb (EV_P_ ev_io *w, int revents)
                     }
                 }
                 if (len > 0) {
-                    fwrite(now_buf, 1, len, stream);
-                }       
+                    send(pac->fd, now_buf, len, 0);
+                }
             }
             fclose(pacfile);
         }
@@ -1154,14 +1143,23 @@ static void pac_recv_cb (EV_P_ ev_io *w, int revents)
 
     // Send default pac content
     if (!use_pac) {
-        fprintf(stream, PAC_DEFAULT_HEAD);
+        buf = pac->buf;
+        buf[0] = '\0';
+        len = 0;
+
+        SEND_CONST_STR(pac->fd, PAC_DEFAULT_HEAD);
         if (except_str_len > 0) {
-            fwrite(except_str, 1, except_str_len, stream);
+            send(pac->fd, except_str, except_str_len, 0);
         }
+
         if (launchd_ctx.except_ios) {
-            fprintf(stream, PAC_DEFAULT_TAIL_IOS, launchd_ctx.local_port);
+            len = sprintf(buf, PAC_DEFAULT_TAIL_IOS, launchd_ctx.local_port);
         } else {
-            fprintf(stream, PAC_DEFAULT_TAIL, launchd_ctx.local_port, launchd_ctx.local_port);
+            len = sprintf(buf, PAC_DEFAULT_TAIL, launchd_ctx.local_port, launchd_ctx.local_port);
+        }
+        if (len > 0 && len < BUF_SIZE) {
+            buf[len] = '\0';
+            send(pac->fd, buf, len, 0);
         }
     }
 
@@ -1172,9 +1170,7 @@ static void pac_recv_cb (EV_P_ ev_io *w, int revents)
         except_str_len = 0;
     }
 
-    // Close stream and free context
-    fflush(stream);
-    fclose(stream);
+    // Close and free context
     close_and_free_pac(EV_A_ pac);
 }
 
