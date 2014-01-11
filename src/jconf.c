@@ -31,23 +31,6 @@ static char *to_string(const json_value *value)
     return NULL;
 }
 
-static int to_int(const json_value *value)
-{
-    if (value->type == json_string)
-    {
-        return atoi(value->u.string.ptr);
-    }
-    else if (value->type == json_integer)
-    {
-        return value->u.integer;
-    }
-    else
-    {
-        FATAL("Invalid config format.");
-    }
-    return 0;
-}
-
 void save_str(char **conf_p, char *value_str)
 {
     if (conf_p == NULL) {
@@ -89,13 +72,13 @@ static void parse_addr(const json_value *value, remote_addr_t *addr) {
     }
     if (ret == -1)
     {
-        save_str(&addr->host, str);
+        save_str((char **) &addr->host, str);
         addr->port = NULL;
     }
     else
     {
-        save_str(&addr->host, ss_strndup(str, ret));
-        save_str(&addr->port, str + ret + 1);
+        save_str((char **) &addr->host, ss_strndup(str, ret));
+        save_str((char **) &addr->port, str + ret + 1);
     }
 }
 
@@ -160,7 +143,7 @@ jconf_t *read_jconf(const char* file)
                 }
                 else if (value->type == json_string)
                 {
-                    save_json_value(&conf.remote_addr[0].host, value);
+                    save_json_value((char **) &conf.remote_addr[0].host, value);
                     conf.remote_addr[0].port = NULL;
                     conf.remote_num = 1;
                 }
