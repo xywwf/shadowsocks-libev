@@ -109,7 +109,9 @@ static void remote_recv_cb (EV_P_ ev_io *w, int revents);
 static void remote_send_cb (EV_P_ ev_io *w, int revents);
 static void pac_accept_cb (EV_P_ ev_io *w, int revents);
 static void pac_recv_cb (EV_P_ ev_io *w, int revents);
+#ifdef __APPLE__
 static void launchd_timeout_cb(EV_P_ ev_timer *w, int revents);
+#endif
 static void free_remote(struct remote *remote);
 static void close_and_free_remote(EV_P_ struct remote *remote);
 static void free_server(struct server *server);
