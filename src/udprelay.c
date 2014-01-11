@@ -52,9 +52,6 @@
 #define BUF_SIZE MAX_UDP_PACKET_SIZE
 
 extern int verbose;
-static char *iface;
-static int remote_conn = 0;
-static int server_conn = 0;
 
 #ifndef __MINGW32__
 static int setnonblocking(int fd)
@@ -156,7 +153,7 @@ static int parse_udprealy_header(const char* buf, const int buf_len, char *host,
 
 int create_remote_socket(int ipv6)
 {
-    int s, remote_sock;
+    int remote_sock;
 
     if (ipv6)
     {
@@ -252,13 +249,14 @@ int create_server_socket(const char *host, const char *port)
     return server_sock;
 }
 
-struct remote_ctx *new_remote_ctx(int fd)
+struct remote_ctx *new_remote(int fd, struct server_ctx *server_ctx)
 {
     struct remote_ctx *ctx = malloc(sizeof(struct remote_ctx));
     memset(ctx, 0, sizeof(struct remote_ctx));
-    ctx->server_ctx = NULL;
     ctx->fd = fd;
+    ctx->server_ctx = server_ctx;
     ev_io_init(&ctx->io, remote_recv_cb, fd, EV_READ);
+    ev_timer_init(&ctx->watcher, remote_timeout_cb, server_ctx->timeout, server_ctx->timeout * 5);
     return ctx;
 }
 
@@ -273,7 +271,7 @@ struct server_ctx * new_server_ctx(int fd)
 
 #ifdef UDPRELAY_REMOTE
 struct query_ctx *new_query_ctx(asyncns_query_t *query,
-                                const uint8_t *buf, const int buf_len)
+                                const char *buf, const int buf_len)
 {
     struct query_ctx *ctx = malloc(sizeof(struct query_ctx));
     memset(ctx, 0, sizeof(struct query_ctx));
@@ -304,12 +302,9 @@ void close_and_free_remote(EV_P_ struct remote_ctx *ctx)
 {
     if (ctx != NULL)
     {
-        close(ctx->fd);
         ev_timer_stop(EV_A_ &ctx->watcher);
-        if (ctx->addr_header != NULL)
-        {
-            free(ctx->addr_header);
-        }
+        ev_io_stop(EV_A_ &ctx->io);
+        close(ctx->fd);
         free(ctx);
     }
 }
@@ -324,7 +319,6 @@ static void remote_timeout_cb(EV_P_ ev_timer *watcher, int revents)
     char *key = hash_key(remote_ctx->addr_header,
                          remote_ctx->addr_header_len, &remote_ctx->src_addr);
     cache_remove(remote_ctx->server_ctx->conn_cache, key);
-    close_and_free_remote(EV_A_ remote_ctx);
 }
 
 #ifdef UDPRELAY_REMOTE
@@ -381,20 +375,20 @@ static void query_resolve_cb(EV_P_ ev_timer *watcher, int revents)
             rp = result;
         }
 
-        int opt = 1;
-
         int remotefd = create_remote_socket(rp->ai_family == AF_INET6);
         if (remotefd != -1)
         {
             setnonblocking(remotefd);
 #ifdef SO_NOSIGPIPE
+            int opt = 1;
             setsockopt(remotefd, SOL_SOCKET, SO_NOSIGPIPE, &opt, sizeof(opt));
 #endif
 #ifdef SET_INTERFACE
-            if (iface) setinterface(remotefd, iface);
+            if (query_ctx->server_ctx->iface)
+                setinterface(remotefd, query_ctx->server_ctx->iface);
 #endif
 
-            struct remote_ctx *remote_ctx = new_remote_ctx(remotefd);
+            struct remote_ctx *remote_ctx = new_remote(remotefd, query_ctx->server_ctx);
             remote_ctx->src_addr = query_ctx->src_addr;
             remote_ctx->dst_addr = *rp->ai_addr;
             remote_ctx->server_ctx = query_ctx->server_ctx;
@@ -451,8 +445,8 @@ static void remote_recv_cb (EV_P_ ev_io *w, int revents)
     ev_timer_again(EV_A_ &remote_ctx->watcher);
 
     struct sockaddr src_addr;
-    int addr_len = sizeof(src_addr);
-    int addr_header_len = remote_ctx->addr_header_len;
+    socklen_t addr_len = sizeof(src_addr);
+    unsigned int addr_header_len = remote_ctx->addr_header_len;
     char *buf = malloc(BUF_SIZE);
 
     // recv
@@ -478,11 +472,18 @@ static void remote_recv_cb (EV_P_ ev_io *w, int revents)
         // error in parse header
         goto CLEAN_UP;
     }
-    buf_len -= addr_header_len;
-    memmove(buf, buf + addr_header_len, buf_len);
+
+    // Construct packet
+    char *tmpbuf = malloc(buf_len + 3);
+    memset(tmpbuf, 0, 3);
+    memcpy(tmpbuf + 3, buf, buf_len);
+    free(buf);
+    buf = tmpbuf;
+    buf_len += 3;
 #endif
 
 #ifdef UDPRELAY_REMOTE
+    // Construct packet
     char *tmpbuf = malloc(buf_len + addr_header_len);
     memcpy(tmpbuf, remote_ctx->addr_header, addr_header_len);
     memcpy(tmpbuf + addr_header_len, buf, buf_len);
@@ -490,10 +491,10 @@ static void remote_recv_cb (EV_P_ ev_io *w, int revents)
     buf = tmpbuf;
     buf_len += addr_header_len;
 
-    ss_encrypt_all(BUF_SIZE, buf, &buf_len, server_ctx->method);
+    buf = ss_encrypt_all(BUF_SIZE, buf, &buf_len, server_ctx->method);
 #endif
 
-    int s = sendto(remote_ctx->fd, buf, buf_len, 0, &remote_ctx->src_addr, sizeof(remote_ctx->src_addr));
+    int s = sendto(server_ctx->fd, buf, buf_len, 0, &remote_ctx->src_addr, sizeof(remote_ctx->src_addr));
 
     if (s == -1)
     {
@@ -511,8 +512,8 @@ static void server_recv_cb (EV_P_ ev_io *w, int revents)
     struct sockaddr src_addr;
     char *buf = malloc(BUF_SIZE);
 
-    int addr_len = sizeof(src_addr);
-    int offset = 0;
+    socklen_t addr_len = sizeof(src_addr);
+    unsigned int offset = 0;
 
     ssize_t buf_len = recvfrom(server_ctx->fd, buf, BUF_SIZE, 0, &src_addr, &addr_len);
 
@@ -622,7 +623,6 @@ static void server_recv_cb (EV_P_ ev_io *w, int revents)
 
     if (remote_ctx == NULL)
     {
-
         struct addrinfo hints;
         struct addrinfo *result;
 
@@ -649,11 +649,19 @@ static void server_recv_cb (EV_P_ ev_io *w, int revents)
         }
         setnonblocking(remotefd);
 
+#ifdef SO_NOSIGPIPE
+        int opt = 1;
+        setsockopt(remotefd, SOL_SOCKET, SO_NOSIGPIPE, &opt, sizeof(opt));
+#endif
+#ifdef SET_INTERFACE
+        if (server_ctx->iface)
+            setinterface(remotefd, server_ctx->iface);
+#endif
+
         // Init remote_ctx
-        remote_ctx = new_remote_ctx(remotefd);
+        remote_ctx = new_remote(remotefd, server_ctx);
         remote_ctx->src_addr = src_addr;
         remote_ctx->dst_addr = *result->ai_addr;
-        remote_ctx->server_ctx = server_ctx;
         remote_ctx->addr_header_len = addr_header_len;
         memcpy(remote_ctx->addr_header, addr_header, addr_header_len);
 
@@ -667,10 +675,10 @@ static void server_recv_cb (EV_P_ ev_io *w, int revents)
         freeaddrinfo(result);
     }
 
-    buf_len -= 3;
-    memmove(buf, buf + 3, buf_len);
+    buf_len -= offset;
+    memmove(buf, buf + offset, buf_len);
 
-    ss_encrypt_all(BUF_SIZE, buf, &buf_len, server_ctx->method);
+    buf = ss_encrypt_all(BUF_SIZE, buf, &buf_len, server_ctx->method);
 
     int s = sendto(remote_ctx->fd, buf, buf_len, 0, &remote_ctx->dst_addr, sizeof(remote_ctx->dst_addr));
 
@@ -680,9 +688,6 @@ static void server_recv_cb (EV_P_ ev_io *w, int revents)
     }
 
 #else
-
-    buf_len -= offset;
-    memmove(buf, buf + offset, buf_len);
 
     if (remote_ctx == NULL)
     {
@@ -701,7 +706,8 @@ static void server_recv_cb (EV_P_ ev_io *w, int revents)
             goto CLEAN_UP;
         }
 
-        struct query_ctx *query_ctx = new_query_ctx(query, buf, buf_len);
+        struct query_ctx *query_ctx = new_query_ctx(query, buf + addr_header_len,
+                buf_len - addr_header_len);
         query_ctx->server_ctx = server_ctx;
         query_ctx->addr_header_len = addr_header_len;
         query_ctx->src_addr = src_addr;
@@ -713,7 +719,8 @@ static void server_recv_cb (EV_P_ ev_io *w, int revents)
     else
     {
 
-        int s = sendto(remote_ctx->fd, buf, buf_len, 0, &remote_ctx->dst_addr, sizeof(remote_ctx->dst_addr));
+        int s = sendto(remote_ctx->fd, buf + addr_header_len,
+                buf_len - addr_header_len, 0, &remote_ctx->dst_addr, sizeof(remote_ctx->dst_addr));
 
         if (s == -1)
         {
@@ -747,11 +754,8 @@ int udprelay_init(const char *server_host, const char *server_port,
 #ifdef UDPRELAY_REMOTE
              asyncns_t *asyncns,
 #endif
-             int method, const char *interface_name)
+             int method, int timeout, const char *interface)
 {
-
-
-    iface = interface_name;
 
     // Inilitialize ev loop
     struct ev_loop *loop = EV_DEFAULT;
@@ -772,8 +776,9 @@ int udprelay_init(const char *server_host, const char *server_port,
     setnonblocking(serverfd);
 
     struct server_ctx *server_ctx = new_server_ctx(serverfd);
+    server_ctx->timeout = timeout;
     server_ctx->method = method;
-    server_ctx->iface = iface;
+    server_ctx->iface = interface;
     server_ctx->conn_cache = conn_cache;
 #ifdef UDPRELAY_LOCAL
     server_ctx->remote_host = remote_host;

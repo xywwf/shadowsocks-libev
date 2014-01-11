@@ -119,7 +119,8 @@ jconf_t *read_jconf(const char* file)
     buf = malloc(pos + 1);
     if (buf == NULL) FATAL("No enough memory.");
 
-    fread(buf, pos, 1, f);
+    int nread = fread(buf, pos, 1, f);
+    if (!nread) FATAL("Failed to read the config file.");
     fclose(f);
 
     buf[pos] = '\0'; // end of string

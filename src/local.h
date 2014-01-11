@@ -4,6 +4,7 @@
 #include <ev.h>
 #include "encrypt.h"
 #include "jconf.h"
+#include "include.h"
 
 #define PAC_RESPONSE "HTTP/1.1 200 OK\r\nServer: shadowsocks pac server\r\nContent-Type: application/x-ns-proxy-autoconfig\r\nConnection: close\r\n\r\n"
 #define PAC_FUNC_NAME "FindProxyForURL"
