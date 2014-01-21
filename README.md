@@ -85,7 +85,7 @@ CAST5-CFB, DES-CFB, IDEA-CFB, RC2-CFB and SEED-CFB.
 
 ### Debian & Ubuntu
 
-Add either of the following lines to your /etc/apt/source.list
+Add either of the following lines to your /etc/apt/sources.list
 
 ```
 # Debian Wheezy, Ubuntu 12.04 or any distribution with libssl > 1.0.1
@@ -107,6 +107,24 @@ sudo vim /etc/shadowsocks/config.json
 # Start the service
 sudo /etc/init.d/shadowsocks start
 ```
+
+### CentOS
+
+Install the dependencies,
+
+```bash
+yum install -y gcc automake autoconf libtool make build-essential autoconf libtool gcc
+yum install -y curl curl-devel zlib-devel openssl-devel perl perl-devel cpio expat-devel gettext-devel
+```
+
+Compile and install,
+
+```bash
+./configure && make
+make install
+```
+
+Then copy this [init script](rpm/SOURCES/etc/init.d/shadowsocks) to `/etc/init.d/`.
 
 ### Linux
 
@@ -280,7 +298,7 @@ set up your server's firewall rules to limit connections from each user.
 
 ## License
 
-Copyright (C) 2013 Max Lv <max.c.lv@gmail.com>
+Copyright (C) 2014 Max Lv <max.c.lv@gmail.com>
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
