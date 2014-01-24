@@ -439,7 +439,9 @@ static void remote_timeout_cb(EV_P_ ev_timer *watcher, int revents)
     struct remote *remote = remote_ctx->remote;
     struct server *server = remote->server;
 
-    LOGD("remote timeout");
+    if (verbose) {
+        LOGD("remote timeout");
+    }
 
     ev_timer_stop(EV_A_ watcher);
 
@@ -830,7 +832,9 @@ static void launchd_reload_conf(void)
             launchd_ctx.cipher_mode = enc_init(conf->password, conf->method);
             save_str(&launchd_ctx.password, strdup(conf->password));
             save_str(&launchd_ctx.method, strdup(conf->method));
-            LOGD("reloading ciphers... %s", conf->method);
+            if (verbose) {
+                LOGD("reloading ciphers... %s", conf->method);
+            }
         }
         launchd_ctx.except_num = conf->except_num;
         launchd_ctx.except_list = conf->except_list;
@@ -841,7 +845,9 @@ static void launchd_reload_conf(void)
             conf_listen_ctx(&launchd_ctx.local_ctxs[i], conf->remote_num, conf->remote_port, \
                 conf->remote_addr, conf->timeout, NULL, launchd_ctx.cipher_mode);
         }
-        LOGD("config reloaded.");
+        if (verbose) {
+            LOGD("config reloaded.");
+        }
     }
 }
 
