@@ -18,6 +18,7 @@
 #define PAC_EXCEPT_HEAD_LEN (sizeof(PAC_EXCEPT_HEAD) - 1)
 #define PAC_EXCEPT_ENTRY_LEN (sizeof(PAC_EXCEPT_ENTRY) - 5)
 #define PAC_UPDATE_CONF "Update-Conf"
+#define PAC_FORCE_STOP "Force-Stop"
 #define PAC_SET_PROXY_PAC "SetProxy-Pac"
 #define PAC_SET_PROXY_SOCKS "SetProxy-Socks"
 #define PAC_SET_PROXY_NONE "SetProxy-None"
@@ -26,7 +27,6 @@
 
 #define LAUNCHD_NAME_SOCKS "SOCKS"
 #define LAUNCHD_NAME_PAC "PAC"
-#define LAUNCHD_DEFAULT_TIMEOUT 480
 
 struct listen_ctx
 {
@@ -111,9 +111,6 @@ static void remote_recv_cb (EV_P_ ev_io *w, int revents);
 static void remote_send_cb (EV_P_ ev_io *w, int revents);
 static void pac_accept_cb (EV_P_ ev_io *w, int revents);
 static void pac_recv_cb (EV_P_ ev_io *w, int revents);
-#ifdef __APPLE__
-static void launchd_timeout_cb(EV_P_ ev_timer *w, int revents);
-#endif
 static void free_remote(struct remote *remote);
 static void close_and_free_remote(EV_P_ struct remote *remote);
 static void free_server(struct server *server);

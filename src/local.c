@@ -56,7 +56,6 @@ int udprelay = 0;
 
 int launchd = 0;
 launchd_ctx_t launchd_ctx;
-ev_timer launchd_timer;
 
 #ifndef __MINGW32__
 static int setnonblocking(int fd)
@@ -747,11 +746,6 @@ static void accept_cb (EV_P_ ev_io *w, int revents)
         ERROR("accept");
         return;
     }
-#ifdef __APPLE__
-    if (launchd) {
-        ev_timer_again(EV_A_ &launchd_timer);
-    }
-#endif
     setnonblocking(serverfd);
     int opt = 1;
     setsockopt(serverfd, IPPROTO_TCP, TCP_NODELAY, &opt, sizeof(opt));
@@ -964,10 +958,9 @@ static int launchd_get_proxy_dict(int enabled, int is_socks)
     return ret;
 }
 
-static void launchd_timeout_cb(EV_P_ ev_timer *watcher, int revents)
+static void launchd_force_stop(struct ev_loop *loop)
 {
-    LOGD("launchd timeout, stopping service...");
-    ev_timer_stop(EV_A_ watcher);
+    LOGD("launchd force stopping service...");
 
     // Release memory
     if (launchd_ctx.local_ctxs) {
@@ -1038,18 +1031,22 @@ static void pac_recv_cb (EV_P_ ev_io *w, int revents)
     // Respond to launchd commands
     if (launchd) {
         int will_update;
+        int will_force_stop;
         int will_set_proxy;
         int proxy_enabled;
         int proxy_socks;
         char *proxy_type;
 
         will_update = 0;
+        will_force_stop = 0;
         will_set_proxy = 0;
         proxy_enabled = 0;
         proxy_socks = 0;
 
         if (strstr(buf, PAC_UPDATE_CONF)) {
             will_update = 1;
+        } else if (strstr(buf, PAC_FORCE_STOP)) {
+            will_force_stop = 1;
         } else if (strstr(buf, PAC_SET_PROXY_NONE)) {
             will_set_proxy = 1;
             proxy_enabled = 0;
@@ -1070,18 +1067,27 @@ static void pac_recv_cb (EV_P_ ev_io *w, int revents)
             if (will_update) {
                 launchd_reload_conf();
                 SEND_CONST_STR(pac->fd, PAC_RESPONSE_SUCC);
+            } else if (will_force_stop) {
+                SEND_CONST_STR(pac->fd, PAC_RESPONSE_SUCC);
             } else if (will_set_proxy) {
                 if (launchd_get_proxy_dict(proxy_enabled, proxy_socks)) {
                     SEND_CONST_STR(pac->fd, PAC_RESPONSE_SUCC);
-                    LOGD("proxy is set: %s.", proxy_type);
+                    if (verbose) {
+                        LOGD("proxy is set: %s.", proxy_type);
+                    }
                 } else {
                     SEND_CONST_STR(pac->fd, PAC_RESPONSE_FAIL);
-                    LOGE("failed to set proxy: %s.", proxy_type);
+                    if (verbose) {
+                        LOGE("failed to set proxy: %s.", proxy_type);
+                    }
                 }
             } else {
                 break;
             }
             close_and_free_pac(EV_A_ pac);
+            if (will_force_stop) {
+                launchd_force_stop(loop);
+            }
             return;
         } while (0);
     }
@@ -1190,11 +1196,6 @@ static void pac_accept_cb(EV_P_ ev_io *w, int revents)
         ERROR("accept for pac");
         return;
     }
-#ifdef __APPLE__
-    if (launchd) {
-        ev_timer_again(EV_A_ &launchd_timer);
-    }
-#endif
     setnonblocking(serverfd);
     pac = (struct pac_server_ctx *) malloc(sizeof(struct pac_server_ctx));
     pac->buf = (char *) malloc(BUF_SIZE);
@@ -1221,7 +1222,6 @@ int main (int argc, char **argv)
 
     int i, c;
     int pid_flags = 0;
-    int launchd_timeout = 0;
     char *local_port = NULL;
     char *local_addr = NULL;
     char *password = NULL;
@@ -1243,7 +1243,7 @@ int main (int argc, char **argv)
 
     opterr = 0;
 
-    while ((c = getopt (argc, argv, "f:s:p:l:k:t:m:i:c:b:x:y:e:d:nuv")) != -1)
+    while ((c = getopt (argc, argv, "f:s:p:l:k:t:m:i:c:b:x:y:e:dnuv")) != -1)
     {
         switch (c)
         {
@@ -1294,10 +1294,6 @@ int main (int argc, char **argv)
             break;
         case 'd':
             launchd = 1;
-            launchd_timeout = atoi(optarg);
-            if (launchd_timeout == 0) {
-                launchd_timeout = LAUNCHD_DEFAULT_TIMEOUT;
-            }
             break;
         case 'n':
             except_ios = 1;
@@ -1514,10 +1510,6 @@ int main (int argc, char **argv)
         if (listen_ok != 1) {
             FATAL("failed to start by launchd");
         }
-
-        // Start launchd auto exit timer
-        ev_timer_init(&launchd_timer, launchd_timeout_cb, 0, launchd_timeout);
-        ev_timer_again(EV_A_ &launchd_timer);
         LOGD("running in launchd mode...");
 #else
         FATAL("launchd mode is only for darwin.");

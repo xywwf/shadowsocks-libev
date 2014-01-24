@@ -1,7 +1,12 @@
 #ifndef _ENCRYPT_H
 #define _ENCRYPT_H
 
+#ifdef SUBLIME_TEXT
+#define USE_CRYPTO_OPENSSL 1
+#define UDPRELAY_LOCAL 1
+#else
 #include "config.h"
+#endif
 
 #ifndef __MINGW32__
 #include <sys/socket.h>
