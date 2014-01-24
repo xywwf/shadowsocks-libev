@@ -967,6 +967,7 @@ static int launchd_get_proxy_dict(int enabled, int is_socks)
 static void launchd_timeout_cb(EV_P_ ev_timer *watcher, int revents)
 {
     LOGD("launchd timeout, stopping service...");
+    ev_timer_stop(EV_A_ watcher);
 
     // Release memory
     if (launchd_ctx.local_ctxs) {
