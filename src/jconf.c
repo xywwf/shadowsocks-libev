@@ -55,8 +55,17 @@ static void save_json_value(char **conf_p, const json_value *value)
     save_str(conf_p, to_string(value));
 }
 
-static void parse_addr(const json_value *value, remote_addr_t *addr) {
-    int ret = -1;
+void free_addr(ss_addr_t *addr)
+{
+    free(addr->host);
+    free(addr->port);
+    addr->host = NULL;
+    addr->port = NULL;
+}
+
+void parse_addr(const char *str, ss_addr_t *addr)
+{
+    int ret = -1, n = 0;
     char *pch;
     char *str;
 
@@ -67,8 +76,15 @@ static void parse_addr(const json_value *value, remote_addr_t *addr) {
     pch = strchr(str, ':');
     while (pch != NULL)
     {
+        n++;
         ret = pch - str;
         pch = strchr(pch + 1, ':');
+    }
+    if (n > 1) {
+        if (strcmp(str+ret, "]") != 0)
+        {
+            ret = -1;
+        }
     }
     if (ret == -1)
     {

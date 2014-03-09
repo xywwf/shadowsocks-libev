@@ -2,7 +2,7 @@ dnl                                               -*- Autoconf -*-
 dnl Process this file with autoconf to produce a configure script.
 
 AC_PREREQ([2.67])
-AC_INIT([shadowsocks], [1.4.2], [max.c.lv@gmail.com])
+AC_INIT([shadowsocks], [1.4.3], [max.c.lv@gmail.com])
 AC_CONFIG_SRCDIR([src/encrypt.c])
 AC_CONFIG_HEADERS([config.h])
 
@@ -141,7 +141,7 @@ dnl Checks for library functions.
 AC_FUNC_FORK
 AC_FUNC_SELECT_ARGTYPES
 AC_TYPE_SIGNAL
-AC_CHECK_FUNCS([memset select setresuid setreuid strerror])
+AC_CHECK_FUNCS([memset select setresuid setreuid strerror getpwnam_r])
 
 dnl Check for select() into ws2_32 for Msys/Mingw
 if test "$ac_cv_func_select" != "yes"; then

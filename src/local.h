@@ -31,7 +31,7 @@
 struct listen_ctx
 {
     ev_io io;
-    remote_addr_t *remote_addr;
+    ss_addr_t *remote_addr;
     char *iface;
     int remote_num;
     int method;

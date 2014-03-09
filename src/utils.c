@@ -2,6 +2,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <errno.h>
+#include <pwd.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -59,6 +60,93 @@ char *itoa(int i)
     return p;
 }
 
+/*
+ * setuid() and setgid() for a specified user.
+ */
+int run_as(const char *user)
+{
+#ifndef __MINGW32__
+	if (user[0])
+    {
+#ifdef HAVE_GETPWNAM_R
+		struct passwd pwdbuf, *pwd;
+		size_t buflen;
+		int err;
+
+		for (buflen = 128;; buflen *= 2)
+        {
+			char buf[buflen];  /* variable length array */
+
+			/* Note that we use getpwnam_r() instead of getpwnam(),
+			   which returns its result in a statically allocated buffer and
+			   cannot be considered thread safe. */
+			err = getpwnam_r(user, &pwdbuf, buf, buflen, &pwd);
+			if(err == 0 && pwd)
+            {
+				/* setgid first, because we may not be allowed to do it anymore after setuid */
+				if (setgid(pwd->pw_gid) != 0)
+                {
+					LOGE("Could not change group id to that of run_as user '%s': %s",
+						  user,strerror(errno));
+					return 0;
+				}
+
+				if (setuid(pwd->pw_uid) != 0)
+                {
+					LOGE("Could not change user id to that of run_as user '%s': %s",
+						  user,strerror(errno));
+					return 0;
+				}
+				break;
+			}
+			else if (err != ERANGE)
+            {
+				if(err)
+					LOGE("run_as user '%s' could not be found: %s",user,strerror(err));
+				else
+					LOGE("run_as user '%s' could not be found.",user);
+				return 0;
+			}
+			else if (buflen >= 16*1024)
+            {
+				/* If getpwnam_r() seems defective, call it quits rather than
+				   keep on allocating ever larger buffers until we crash. */
+				LOGE("getpwnam_r() requires more than %u bytes of buffer space.",(unsigned)buflen);
+				return 0;
+			}
+			/* Else try again with larger buffer. */
+		}
+#else
+		/* No getpwnam_r() :-(  We'll use getpwnam() and hope for the best. */
+		struct passwd *pwd;
+
+		if (!(pwd=getpwnam(user)))
+        {
+			LOGE("run_as user %s could not be found.",user);
+			return 0;
+		}
+		/* setgid first, because we may not allowed to do it anymore after setuid */
+		if (setgid(pwd->pw_gid) != 0)
+        {
+			LOGE("Could not change group id to that of run_as user '%s': %s",
+				  user,strerror(errno));
+			return 0;
+		}
+		if (setuid(pwd->pw_uid) != 0)
+        {
+			LOGE("Could not change user id to that of run_as user '%s': %s",
+				  user,strerror(errno));
+			return 0;
+		}
+#endif
+	}
+
+#endif //__MINGW32__
+	return 1;
+}
+
+
+
 char *ss_strndup(const char *s, size_t n)
 {
     size_t len = strlen(s);
@@ -82,9 +170,9 @@ void usage()
 {
     printf("\n");
     printf("shadowsocks-libev %s\n\n", VERSION);
-    printf("  maintained by Max Lv <max.c.lv@gmail.com>\n\n");
+    printf("  maintained by Max Lv <max.c.lv@gmail.com> and Linus Yang <laokongzi@gmail.com>\n\n");
     printf("  usage:\n\n");
-    printf("    ss-[local|redir|server]\n");
+    printf("    ss-[local|redir|server|tunnel]\n");
     printf("          -s <server_host>           host name or ip address of remote server\n");
     printf("          -p <server_port>           port number of your remote server\n");
     printf("          -l <local_port>            port number of your local server\n");
@@ -100,9 +188,9 @@ void usage()
     printf("          [-c <config_file>]         json format config file\n");
     printf("\n");
     printf("          [-i <interface>]           specific network interface to bind,\n");
-    printf("                                     only available in local and server modes\n");
+    printf("                                     not available in redir mode\n");
     printf("          [-b <local_address>]       specific local address to bind,\n");
-    printf("                                     only available in local and redir modes\n");
+    printf("                                     not available in server mode\n");
     printf("\n");
     printf("          [-x <pac_port>]            port number of local pac file server\n");
     printf("          [-y <pac_path>]            pac auto proxy file path\n");
@@ -111,7 +199,9 @@ void usage()
     printf("          [-n]                       non-compatible pac syntax for iOS\n");
     printf("\n");
     printf("          [-u]                       udprelay mode to supprot udp traffic\n");
-    printf("                                     only available in local and server modes\n");
+    printf("                                     not available in redir mode\n");
+    printf("          [-L <addr>:<port>]         setup a local port forwarding tunnel\n");
+    printf("                                     only available in tunnel mode\n");
     printf("          [-v]                       verbose mode, debug output in console\n");
     printf("\n");
 }

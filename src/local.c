@@ -259,16 +259,16 @@ static void server_recv_cb (EV_P_ ev_io *w, int revents)
         }
         else
         {
-            char *addr_to_send = malloc(BUF_SIZE);
+            char *ss_addr_to_send = malloc(BUF_SIZE);
             ssize_t addr_len = 0;
-            addr_to_send[addr_len++] = request->atyp;
+            ss_addr_to_send[addr_len++] = request->atyp;
 
             // get remote addr and port
             if (request->atyp == 1)
             {
                 // IP V4
                 size_t in_addr_len = sizeof(struct in_addr);
-                memcpy(addr_to_send + addr_len, remote->buf + 4, in_addr_len + 2);
+                memcpy(ss_addr_to_send + addr_len, remote->buf + 4, in_addr_len + 2);
                 addr_len += in_addr_len + 2;
 
                 if (verbose)
@@ -285,8 +285,8 @@ static void server_recv_cb (EV_P_ ev_io *w, int revents)
             {
                 // Domain name
                 uint8_t name_len = *(uint8_t *)(remote->buf + 4);
-                addr_to_send[addr_len++] = name_len;
-                memcpy(addr_to_send + addr_len, remote->buf + 4 + 1, name_len + 2);
+                ss_addr_to_send[addr_len++] = name_len;
+                memcpy(ss_addr_to_send + addr_len, remote->buf + 4 + 1, name_len + 2);
                 addr_len += name_len + 2;
 
                 if (verbose)
@@ -303,7 +303,7 @@ static void server_recv_cb (EV_P_ ev_io *w, int revents)
             {
                 // IP V6
                 size_t in6_addr_len = sizeof(struct in6_addr);
-                memcpy(addr_to_send + addr_len, remote->buf + 4, in6_addr_len + 2);
+                memcpy(ss_addr_to_send + addr_len, remote->buf + 4, in6_addr_len + 2);
                 addr_len += in6_addr_len + 2;
 
                 if (verbose)
@@ -324,16 +324,16 @@ static void server_recv_cb (EV_P_ ev_io *w, int revents)
                 return;
             }
 
-            addr_to_send = ss_encrypt(BUF_SIZE, addr_to_send, &addr_len, server->e_ctx);
-            if (addr_to_send == NULL)
+            ss_addr_to_send = ss_encrypt(BUF_SIZE, ss_addr_to_send, &addr_len, server->e_ctx);
+            if (ss_addr_to_send == NULL)
             {
                 LOGE("invalid password or cipher");
                 close_and_free_remote(EV_A_ remote);
                 close_and_free_server(EV_A_ server);
                 return;
             }
-            int s = send(remote->fd, addr_to_send, addr_len, 0);
-            free(addr_to_send);
+            int s = send(remote->fd, ss_addr_to_send, addr_len, 0);
+            free(ss_addr_to_send);
 
             if (s < addr_len)
             {
@@ -776,7 +776,6 @@ static void accept_cb (EV_P_ ev_io *w, int revents)
     if (sockfd < 0)
     {
         ERROR("socket");
-        close(sockfd);
         freeaddrinfo(res);
         return;
     }
@@ -804,7 +803,7 @@ static void accept_cb (EV_P_ ev_io *w, int revents)
 }
 
 static void conf_listen_ctx(struct listen_ctx *p_listen_ctx, int remote_num, \
-    char *remote_port, remote_addr_t *remote_addr, char *timeout, char *iface, int m)
+    char *remote_port, ss_addr_t *remote_addr, char *timeout, char *iface, int m)
 {
     int index = 0;
 
@@ -1228,6 +1227,7 @@ int main (int argc, char **argv)
 
     int i, c;
     int pid_flags = 0;
+    char *user = NULL;
     char *local_port = NULL;
     char *local_addr = NULL;
     char *password = NULL;
@@ -1240,7 +1240,7 @@ int main (int argc, char **argv)
     char *pac_path = NULL;
 
     int remote_num = 0;
-    remote_addr_t remote_addr[MAX_REMOTE_NUM];
+    ss_addr_t remote_addr[MAX_REMOTE_NUM];
     char *remote_port = NULL;
 
     int except_ios = 0;
@@ -1249,7 +1249,7 @@ int main (int argc, char **argv)
 
     opterr = 0;
 
-    while ((c = getopt (argc, argv, "f:s:p:l:k:t:m:i:c:b:x:y:e:dnuv")) != -1)
+    while ((c = getopt (argc, argv, "f:s:p:l:k:t:m:i:c:b:a:x:y:e:dnuv")) != -1)
     {
         switch (c)
         {
@@ -1286,6 +1286,9 @@ int main (int argc, char **argv)
             break;
         case 'b':
             local_addr = optarg;
+            break;
+        case 'a':
+            user = optarg;
             break;
         case 'x':
             pac_port = optarg;
@@ -1571,6 +1574,10 @@ int main (int argc, char **argv)
             udprelay_init(local_addr, local_port, remote_addr[0].host, remote_addr[0].port, m, listen_ctx.timeout, iface);
         }
     }
+
+    // setuid
+    if (user != NULL)
+        run_as(user);
 
     // Start loop
     ev_run (loop, 0);

@@ -9,16 +9,16 @@
 
 typedef struct
 {
-    const char *host;
-    const char *port;
-} remote_addr_t;
+    char *host;
+    char *port;
+} ss_addr_t;
 
 typedef char *except_addr_t;
 
 typedef struct
 {
     int  remote_num;
-    remote_addr_t remote_addr[MAX_REMOTE_NUM];
+    ss_addr_t remote_addr[MAX_REMOTE_NUM];
     char *remote_port;
     char *local_addr;
     char *local_port;
@@ -33,5 +33,7 @@ typedef struct
 
 jconf_t *read_jconf(const char* file);
 void save_str(char **conf_p, char *value_str);
+void parse_addr(const char *str, ss_addr_t *addr);
+void free_addr(ss_addr_t *addr);
 
 #endif // _JCONF_H

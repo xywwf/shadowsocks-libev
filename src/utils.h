@@ -4,6 +4,9 @@
 #include <stdio.h>
 #include <time.h>
 
+#define PORTSTRLEN 16
+#define SS_ADDRSTRLEN (INET6_ADDRSTRLEN + PORTSTRLEN + 1)
+
 #ifdef ANDROID
 
 #include <android/log.h>
@@ -94,6 +97,7 @@ char *itoa(int i);
 
 #endif
 
+int run_as(const char *user);
 void FATAL(const char *msg);
 void usage(void);
 void demonize(const char* path);
