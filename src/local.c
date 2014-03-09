@@ -1567,12 +1567,12 @@ int main (int argc, char **argv)
 
             LOGD("pac server listening at port %s.", pac_port);
         }
+    }
 
-        // Setup UDP
-        if (udprelay) {
-            LOGD("udprelay enabled.");
-            udprelay_init(local_addr, local_port, remote_addr[0].host, remote_addr[0].port, m, listen_ctx.timeout, iface);
-        }
+    // Setup UDP
+    if (udprelay) {
+        LOGD("udprelay enabled.");
+        udprelay_init(local_addr, local_port, remote_addr[0].host, remote_addr[0].port, m, atoi(timeout), iface);
     }
 
     // setuid
