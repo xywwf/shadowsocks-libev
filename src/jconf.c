@@ -67,12 +67,6 @@ void parse_addr(const char *str, ss_addr_t *addr)
 {
     int ret = -1, n = 0;
     char *pch;
-    char *str;
-
-    if (addr == NULL) {
-        return;
-    }
-    str = to_string(value);
     pch = strchr(str, ':');
     while (pch != NULL)
     {
@@ -88,14 +82,27 @@ void parse_addr(const char *str, ss_addr_t *addr)
     }
     if (ret == -1)
     {
-        save_str((char **) &addr->host, str);
+        save_str((char **) &addr->host, (char *) str);
         addr->port = NULL;
     }
     else
     {
         save_str((char **) &addr->host, ss_strndup(str, ret));
-        save_str((char **) &addr->port, str + ret + 1);
+        save_str((char **) &addr->port, (char *) str + ret + 1);
     }
+}
+
+static void parse_addr_value(const json_value *value, ss_addr_t *addr)
+{
+    char *str;
+    if (addr == NULL) {
+        return;
+    }
+    str = to_string(value);
+    if (str == NULL) {
+        return;
+    }
+    parse_addr(str, addr);
 }
 
 jconf_t *read_jconf(const char* file)
@@ -153,7 +160,7 @@ jconf_t *read_jconf(const char* file)
                     {
                         if (j >= MAX_REMOTE_NUM) break;
                         json_value *v = value->u.array.values[j];
-                        parse_addr(v, conf.remote_addr + j);
+                        parse_addr_value(v, conf.remote_addr + j);
                         conf.remote_num = j + 1;
                     }
                 }
