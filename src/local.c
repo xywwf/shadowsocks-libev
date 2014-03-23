@@ -1007,6 +1007,62 @@ static int launchd_get_proxy_dict(int enabled, int is_socks, int set_dns, int dn
     return ret;
 }
 
+static void tun2socks_reachability_callback(SCNetworkReachabilityRef target, SCNetworkReachabilityFlags flags, void* info)
+{
+    // Reset route tables when reachability changed
+    if (launchd_ctx.tun2socks_enabled) {
+        if (verbose) {
+            LOGD("network changed, resetting routes...");
+        }
+        tun2socks_route_setup(0);
+        tun2socks_route_setup(1);
+    }
+}
+
+static int tun2socks_reachability_register(int enabled, const char *gateway)
+{
+    int retValue = 0;
+    
+    if (launchd_ctx.tun2socks_reachability != NULL) {
+        if (!SCNetworkReachabilitySetDispatchQueue(launchd_ctx.tun2socks_reachability, NULL)) {
+            retValue = -1;
+        }
+        CFRelease(launchd_ctx.tun2socks_reachability);
+        launchd_ctx.tun2socks_reachability = NULL;
+    }
+    
+    if (!enabled) {
+        return retValue;
+    }
+    
+    // Monitor reachability to current gateway
+    SCNetworkReachabilityContext context = {0, NULL, NULL, NULL, NULL};
+    launchd_ctx.tun2socks_reachability = SCNetworkReachabilityCreateWithName(kCFAllocatorDefault, gateway);
+    
+    // Check if reachability created
+    if (launchd_ctx.tun2socks_reachability == NULL) {
+        goto fail0;
+    }
+    
+    // Set callback
+    if (!SCNetworkReachabilitySetCallback(launchd_ctx.tun2socks_reachability, tun2socks_reachability_callback, &context)) {
+        goto fail1;
+    }
+    
+    // Set dispatch queue
+    if (!SCNetworkReachabilitySetDispatchQueue(launchd_ctx.tun2socks_reachability, TUN2SOCKS_REACHABILITY_QUEUE)) {
+        goto fail1;
+    }
+    
+    return 0;
+    
+fail1:
+    CFRelease(launchd_ctx.tun2socks_reachability);
+    launchd_ctx.tun2socks_reachability = NULL;
+fail0:
+    return -1;
+}
+
 static void launchd_force_stop(struct ev_loop *loop)
 {
     // Release memory
@@ -1301,9 +1357,6 @@ len = ROUNDUP(u.sa.sa_len); memcpy(cp, (char *)&(u), len); cp += len;\
     }
     
     if (write(sock, (char *)&msg, len) < 0) {
-        if (verbose) {
-            ERROR("write(sock)");
-        }
         err = -1;
         goto end;
     }
@@ -1504,10 +1557,10 @@ static int tun2socks_route_gateway_get()
 static int tun2socks_route_setup(int add_route)
 {
     int err = 0;
-    const char *ifname = launchd_ctx.tun2socks_devname;
     int remote_addr_is_ipv4 = 0;
     size_t remote_addr_len;
     size_t remote_addr_span;
+    const char *opinfo = add_route ? TUN2SOCKS_INFO_ADD : TUN2SOCKS_INFO_REMOVE;
     
     // Init network interface
     if (tun2socks_netif_init() < 0) {
@@ -1515,13 +1568,23 @@ static int tun2socks_route_setup(int add_route)
         return -1;
     }
     
-    // Resolve current default gateway when adding routes
+    // Resolve and monitor current default gateway when adding routes
     if (add_route) {
         err = tun2socks_route_gateway_get();
         if (err) {
-            LOGE("failed to resolve current gateway.");
+            if (verbose) {
+                LOGE("failed to resolve current gateway.");
+            }
+            // Use default wifi gateway instead
+            tun2socks_reachability_register(1, TUN2SOCKS_REACHABILITY_WIFI_GATEWAY);
+            
+            // Skipping route settings
             return -1;
+        } else {
+            tun2socks_reachability_register(1, launchd_ctx.tun2socks_gateway);
         }
+    } else {
+        tun2socks_reachability_register(0, NULL);
     }
 
     // Test if remote addr is ipv4
@@ -1563,36 +1626,41 @@ static int tun2socks_route_setup(int add_route)
         // Except remote addr in route 
         if (tun2socks_route_set(add_route, launchd_ctx.tun2socks_iface, launchd_ctx.remote_addr, "255.255.255.255", launchd_ctx.tun2socks_gateway)) {
             if (verbose) {
-                LOGE("failed to set route of remote addr.");
+                LOGE("failed to %s route of remote addr.", opinfo);
             }
         }
     }
     
-    if (launchd_ctx.tun2socks_chnroute) {
-        // Except all chnroutes
-        if (tun2socks_route_setchnroute(add_route, launchd_ctx.tun2socks_iface, launchd_ctx.tun2socks_gateway)) {
-            if (verbose) {
-                LOGE("failed to set chnroutes.");
-            }
+    int add_chnroute = launchd_ctx.tun2socks_chnroute;
+    
+    // Remove chnroutes if not enabled
+    if (!launchd_ctx.tun2socks_chnroute) {
+        add_chnroute = 0;
+    }
+    
+    // Except all chnroutes
+    if (tun2socks_route_setchnroute(add_chnroute, launchd_ctx.tun2socks_iface, launchd_ctx.tun2socks_gateway)) {
+        if (verbose && launchd_ctx.tun2socks_chnroute) {
+            LOGE("failed to %s chnroutes.", opinfo);
         }
     }
     
     // Set new default gateway
-    if (tun2socks_route_set(add_route, ifname, "0.0.0.0", "128.0.0.0", TUN2SOCKS_REMOTE_IP)) {
+    if (tun2socks_route_set(add_route, launchd_ctx.tun2socks_devname, "0.0.0.0", "128.0.0.0", TUN2SOCKS_REMOTE_IP)) {
         if (verbose) {
-            LOGE("failed to set default route.");
+            LOGE("failed to %s default route.", opinfo);
         }
     }
-    if (tun2socks_route_set(add_route, ifname, "128.0.0.0", "128.0.0.0", TUN2SOCKS_REMOTE_IP)) {
+    if (tun2socks_route_set(add_route, launchd_ctx.tun2socks_devname, "128.0.0.0", "128.0.0.0", TUN2SOCKS_REMOTE_IP)) {
         if (verbose) {
-            LOGE("failed to set route 128.0.0.0.");
+            LOGE("failed to %s route 128.0.0.0.", opinfo);
         }
     }
     
     // Set google public dns
     if (!launchd_get_proxy_dict(0, 0, 1, add_route)) {
         if (verbose) {
-            LOGE("failed to set dns");
+            LOGE("failed to %s dns", opinfo);
         }
     }
 
@@ -2191,6 +2259,7 @@ int main (int argc, char **argv)
     launchd_ctx.tun2socks_netif_inited = 0;
     launchd_ctx.tun2socks_chnroute = 0;
     memset(launchd_ctx.tun2socks_gateway, 0, sizeof(launchd_ctx.tun2socks_gateway));
+    launchd_ctx.tun2socks_reachability = NULL;
 
     // Setup libev loop
     struct ev_loop *loop = ev_default_loop(0);

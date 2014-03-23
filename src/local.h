@@ -6,6 +6,16 @@
 #include "jconf.h"
 #include "include.h"
 
+#ifdef __APPLE__
+
+#ifdef __OSX_AVAILABLE_STARTING
+#undef __OSX_AVAILABLE_STARTING
+#define __OSX_AVAILABLE_STARTING(...)
+#endif
+#include <SystemConfiguration/SystemConfiguration.h>
+
+#endif
+
 #define SEND_CONST_STR(fd, s) (send(fd, s, (sizeof(s) - 1), 0))
 
 #define PAC_RESPONSE "HTTP/1.1 200 OK\r\nServer: shadowsocks pac server\r\nContent-Type: application/x-ns-proxy-autoconfig\r\nConnection: close\r\n\r\n"
@@ -42,6 +52,10 @@
 #define TUN2SOCKS_LOG_VERBOSE "4"
 #define TUN2SOCKS_IPV4_ADDR_CHARSET ".0123456789"
 #define TUN2SOCKS_RLIMIT_NOFILE 8192
+#define TUN2SOCKS_REACHABILITY_QUEUE (dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0))
+#define TUN2SOCKS_REACHABILITY_WIFI_GATEWAY "169.254.0.0"
+#define TUN2SOCKS_INFO_ADD "add"
+#define TUN2SOCKS_INFO_REMOVE "remove"
 
 #define LAUNCHD_NAME_SOCKS "SOCKS"
 #define LAUNCHD_NAME_PAC "PAC"
@@ -132,6 +146,9 @@ typedef struct {
     char tun2socks_devname[LAUNCHD_CTX_BUFSIZE];
     char tun2socks_gateway[LAUNCHD_CTX_BUFSIZE];
     char tun2socks_iface[LAUNCHD_CTX_BUFSIZE];
+#ifdef __APPLE__
+    SCNetworkReachabilityRef tun2socks_reachability;
+#endif
 } launchd_ctx_t;
 
 static void accept_cb (EV_P_ ev_io *w, int revents);
@@ -151,30 +168,11 @@ struct remote* new_remote(int fd, int timeout);
 struct server* new_server(int fd, int method);
 
 #ifdef __APPLE__
-#include <CoreFoundation/CoreFoundation.h>
 
 // tun2socks
 void tun2socks_stop(void);
 int tun2socks_start(int argc, char **argv, void (^handler)(void));
 static int tun2socks_route_setup(int add_route);
-
-typedef const struct __SCPreferences *  SCPreferencesRef;
-SCPreferencesRef SCPreferencesCreate (CFAllocatorRef allocator, CFStringRef name, CFStringRef prefsID);
-typedef const struct __SCDynamicStore * SCDynamicStoreRef;
-typedef void (*SCDynamicStoreCallBack) (SCDynamicStoreRef store, CFArrayRef changedKeys, void *info);
-typedef struct {
-    CFIndex     version;
-    void *      info;
-    const void  *(*retain)(const void *info);
-    void        (*release)(const void *info);
-    CFStringRef (*copyDescription)(const void *info);
-} SCDynamicStoreContext;
-SCDynamicStoreRef SCDynamicStoreCreate (CFAllocatorRef allocator, CFStringRef name, SCDynamicStoreCallBack callout, SCDynamicStoreContext *context);
-CFPropertyListRef SCPreferencesGetValue(SCPreferencesRef prefs, CFStringRef key);
-Boolean SCPreferencesPathSetValue (SCPreferencesRef prefs, CFStringRef path, CFDictionaryRef value);
-Boolean SCPreferencesCommitChanges (SCPreferencesRef prefs);
-Boolean SCPreferencesApplyChanges (SCPreferencesRef prefs);
-void SCPreferencesSynchronize (SCPreferencesRef prefs);
 
 // simplified chnroutes
 #define CHNROUTE_NUM 978
