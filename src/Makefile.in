@@ -39,7 +39,8 @@ bin_PROGRAMS = ss-local$(EXEEXT) ss-tunnel$(EXEEXT) $(am__EXEEXT_1) \
 @BUILD_WINCOMPAT_FALSE@am__append_1 = ss-server
 @BUILD_WINCOMPAT_TRUE@am__append_2 = win32.c
 @BUILD_WINCOMPAT_TRUE@am__append_3 = win32.c
-@BUILD_REDIRECTOR_TRUE@am__append_4 = ss-redir
+@BUILD_BADVPN_TRUE@am__append_4 = $(top_builddir)/badvpn/libtsocks.la
+@BUILD_REDIRECTOR_TRUE@am__append_5 = ss-redir
 subdir = src
 DIST_COMMON = $(srcdir)/Makefile.am $(srcdir)/Makefile.in
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
@@ -71,7 +72,7 @@ ss_local_OBJECTS = $(am_ss_local_OBJECTS)
 am__DEPENDENCIES_1 =
 am__DEPENDENCIES_2 = $(top_builddir)/libev/libev.la \
 	$(am__DEPENDENCIES_1)
-ss_local_DEPENDENCIES = $(am__DEPENDENCIES_2)
+ss_local_DEPENDENCIES = $(am__DEPENDENCIES_2) $(am__append_4)
 ss_local_LINK = $(LIBTOOL) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) \
 	--mode=link $(CCLD) $(ss_local_CFLAGS) $(CFLAGS) $(AM_LDFLAGS) \
 	$(LDFLAGS) -o $@
@@ -260,7 +261,7 @@ ss_server_SOURCES = utils.c \
 					cache.c \
                     server.c
 
-ss_local_LDADD = $(SS_COMMON_LIBS)
+ss_local_LDADD = $(SS_COMMON_LIBS) $(am__append_4)
 ss_tunnel_LDADD = $(SS_COMMON_LIBS)
 ss_server_LDADD = $(SS_COMMON_LIBS) \
 	$(top_builddir)/libasyncns/libasyncns.la

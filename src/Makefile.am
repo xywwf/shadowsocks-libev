@@ -50,6 +50,10 @@ ss_local_SOURCES += win32.c
 ss_tunnel_SOURCES += win32.c
 endif
 
+if BUILD_BADVPN
+ss_local_LDADD += $(top_builddir)/badvpn/libtsocks.la
+endif
+
 if BUILD_REDIRECTOR
 bin_PROGRAMS += ss-redir
 ss_redir_SOURCES = utils.c \

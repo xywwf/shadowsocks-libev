@@ -93,6 +93,10 @@ case $host in
     os_support=mingw
     AC_MSG_RESULT(MinGW)
     ;;
+  *-darwin*)
+    os_support=darwin
+    AC_MSG_RESULT(Darwin)
+    ;;
   *)
     AC_MSG_RESULT(transparent proxy does not support for $host)
     ;;
@@ -100,6 +104,7 @@ esac
 
 AM_CONDITIONAL(BUILD_REDIRECTOR, test "$os_support" = "linux")
 AM_CONDITIONAL(BUILD_WINCOMPAT, test "$os_support" = "mingw")
+AM_CONDITIONAL(BUILD_BADVPN, test "$os_support" = "darwin")
 
 dnl Checks for header files.
 AC_CHECK_HEADERS([stdint.h inttypes.h arpa/inet.h fcntl.h langinfo.h locale.h netdb.h netinet/in.h stdlib.h string.h strings.h unistd.h sys/ioctl.h])
@@ -197,5 +202,6 @@ AC_CONFIG_MACRO_DIR([m4])
 AC_CONFIG_FILES([Makefile
                  libasyncns/Makefile
                  libev/Makefile
+                 badvpn/Makefile
                  src/Makefile])
 AC_OUTPUT

@@ -621,6 +621,8 @@ PTHREAD_CFLAGS
 PTHREAD_LIBS
 PTHREAD_CC
 acx_pthread_config
+BUILD_BADVPN_FALSE
+BUILD_BADVPN_TRUE
 BUILD_WINCOMPAT_FALSE
 BUILD_WINCOMPAT_TRUE
 BUILD_REDIRECTOR_FALSE
@@ -13222,6 +13224,11 @@ $as_echo "#define EV_WIN32_CLOSE_FD(fd) closesocket(fd)" >>confdefs.h
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: MinGW" >&5
 $as_echo "MinGW" >&6; }
     ;;
+  *-darwin*)
+    os_support=darwin
+    { $as_echo "$as_me:${as_lineno-$LINENO}: result: Darwin" >&5
+$as_echo "Darwin" >&6; }
+    ;;
   *)
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: transparent proxy does not support for $host" >&5
 $as_echo "transparent proxy does not support for $host" >&6; }
@@ -13242,6 +13249,14 @@ fi
 else
   BUILD_WINCOMPAT_TRUE='#'
   BUILD_WINCOMPAT_FALSE=
+fi
+
+ if test "$os_support" = "darwin"; then
+  BUILD_BADVPN_TRUE=
+  BUILD_BADVPN_FALSE='#'
+else
+  BUILD_BADVPN_TRUE='#'
+  BUILD_BADVPN_FALSE=
 fi
 
 
@@ -14953,7 +14968,7 @@ ac_compiler_gnu=$ac_cv_c_compiler_gnu
 
 
 
-ac_config_files="$ac_config_files Makefile libasyncns/Makefile libev/Makefile src/Makefile"
+ac_config_files="$ac_config_files Makefile libasyncns/Makefile libev/Makefile badvpn/Makefile src/Makefile"
 
 cat >confcache <<\_ACEOF
 # This file is a shell script that caches the results of configure
@@ -15090,6 +15105,10 @@ Usually this means the macro was only invoked conditionally." "$LINENO" 5
 fi
 if test -z "${BUILD_WINCOMPAT_TRUE}" && test -z "${BUILD_WINCOMPAT_FALSE}"; then
   as_fn_error $? "conditional \"BUILD_WINCOMPAT\" was never defined.
+Usually this means the macro was only invoked conditionally." "$LINENO" 5
+fi
+if test -z "${BUILD_BADVPN_TRUE}" && test -z "${BUILD_BADVPN_FALSE}"; then
+  as_fn_error $? "conditional \"BUILD_BADVPN\" was never defined.
 Usually this means the macro was only invoked conditionally." "$LINENO" 5
 fi
 
@@ -15980,6 +15999,7 @@ do
     "Makefile") CONFIG_FILES="$CONFIG_FILES Makefile" ;;
     "libasyncns/Makefile") CONFIG_FILES="$CONFIG_FILES libasyncns/Makefile" ;;
     "libev/Makefile") CONFIG_FILES="$CONFIG_FILES libev/Makefile" ;;
+    "badvpn/Makefile") CONFIG_FILES="$CONFIG_FILES badvpn/Makefile" ;;
     "src/Makefile") CONFIG_FILES="$CONFIG_FILES src/Makefile" ;;
 
   *) as_fn_error $? "invalid argument: \`$ac_config_target'" "$LINENO" 5;;
