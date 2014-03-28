@@ -1619,6 +1619,7 @@ static int tun2socks_route_setup(int add_route)
                     }
                 }
             }
+            freeaddrinfo(res);
         }
     }
 
